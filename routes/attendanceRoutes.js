@@ -96,14 +96,15 @@ const handleAttendanceReport = async (req, res) => {
         e.name, 
         e.emp_code, 
         TO_CHAR(a.date, 'DD-MM-YYYY') AS date,
-        w.ward_name AS ward, 
+        w.kothi_name AS kothi, 
         z.zone_name AS zone, 
         c.city_name AS city, 
         dept.department_name AS department,
         des.designation_name AS designation,
+           a.leave_type,
         e.phone AS contact_no, 
-        TO_CHAR(a.punch_in_time, 'HH24:MI:SS') AS punch_in, 
-        TO_CHAR((a.mid_shift_punch_in_time AT TIME ZONE 'Asia/Kolkata'), 'HH24:MI:SS') AS mid_shift_punch_in,
+        TO_CHAR(a.punch_in_time AT TIME ZONE 'Asia/Kolkata', 'HH24:MI:SS') AS punch_in, 
+        TO_CHAR(a.mid_shift_punch_in_time AT TIME ZONE 'Asia/Kolkata', 'HH24:MI:SS') AS mid_shift_punch_in,
         a.in_address,
         a.latitude_in,
         a.longitude_in,
@@ -112,7 +113,7 @@ const handleAttendanceReport = async (req, res) => {
         a.latitude_mid_in,
         a.longitude_mid_in,
         a.mid_shift_punch_in_image,
-        TO_CHAR(a.punch_out_time, 'HH24:MI:SS') AS punch_out, 
+        TO_CHAR(a.punch_out_time AT TIME ZONE 'Asia/Kolkata', 'HH24:MI:SS') AS punch_out, 
         a.out_address,
         a.latitude_out,
         a.longitude_out,
@@ -125,7 +126,7 @@ const handleAttendanceReport = async (req, res) => {
         u1.name AS punched_out_by
       FROM attendance a
       JOIN employee e ON a.emp_id = e.emp_id
-      JOIN wards w ON a.ward_id = w.ward_id
+      JOIN kothis w ON a.kothi_id = w.kothi_id
       JOIN zones z ON w.zone_id = z.zone_id
       JOIN cities c ON z.city_id = c.city_id
       LEFT JOIN designation des ON e.designation_id = des.designation_id
@@ -159,7 +160,7 @@ const handleAttendanceDownload = createAttendanceDownloadHandler({
 router.get("/download", handleAttendanceDownload);
 router.post("/download", handleAttendanceDownload);
 
-// Short Attendance summarized report - supports optional wardId (sector) and kothiId filters
+// Short Attendance summarized report - supports optional wardId (ward) and kothiId filters
 router.get("/short-report", async (req, res) => {
   const { cityName, zoneName, wardId, kothiId, date } = req.query;
   if (!cityName) {
@@ -168,7 +169,13 @@ router.get("/short-report", async (req, res) => {
       .json({ error: "cityName query param is required." });
   }
 
-  const targetDate = date || formatDateIST();
+  let targetDate = date || formatDateIST();
+  if (targetDate && typeof targetDate === "string") {
+    const parts = targetDate.split("-");
+    if (parts.length === 3 && parts[2].length === 4) {
+      targetDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+    }
+  }
   const scope = req.cityScope || { all: false, ids: [] };
 
   try {
@@ -197,7 +204,7 @@ router.get("/short-report", async (req, res) => {
 
     if (wardId && wardId !== "all" && wardId !== "undefined" && wardId !== "") {
       params.push(Number(wardId));
-      extraClause += ` AND w.sector_id = $${params.length}`;
+      extraClause += ` AND w.ward_id = $${params.length}`;
     }
 
     if (kothiId && kothiId !== "all" && kothiId !== "undefined" && kothiId !== "") {
@@ -207,7 +214,7 @@ router.get("/short-report", async (req, res) => {
         .filter((id) => !isNaN(id) && id > 0);
       if (kothiIds.length > 0) {
         params.push(kothiIds);
-        extraClause += ` AND w.ward_id = ANY($${params.length})`;
+        extraClause += ` AND w.kothi_id = ANY($${params.length})`;
       }
     }
 
@@ -220,8 +227,8 @@ router.get("/short-report", async (req, res) => {
       `SELECT
     c.city_name,
     z.zone_name,
-    s.sector_name AS ward_name,
-    w.ward_name AS kothi_name,
+    s.ward_name AS kothi_name,
+    w.kothi_name AS kothi_name,
 
     COALESCE(sup.supervisor_names, '') AS supervisor_names,
 
@@ -241,7 +248,7 @@ router.get("/short-report", async (req, res) => {
 
     COUNT(
       DISTINCT CASE
-        WHEN a.leave_type IS NOT NULL
+        WHEN a.leave_type IS NOT NULL AND a.punch_in_time IS NULL
         THEN e.emp_id
       END
     ) AS total_leave_employees,
@@ -301,7 +308,7 @@ router.get("/short-report", async (req, res) => {
       NULL
     ) AS leave_emp_ids
 
-  FROM public.wards w
+  FROM public.kothis w
 
   JOIN public.zones z
     ON w.zone_id = z.zone_id
@@ -309,11 +316,11 @@ router.get("/short-report", async (req, res) => {
   JOIN public.cities c
     ON z.city_id = c.city_id
 
-  LEFT JOIN public.sectors s
-    ON w.sector_id = s.sector_id
+  LEFT JOIN public.wards s
+    ON w.ward_id = s.ward_id
 
   LEFT JOIN public.employee e
-    ON e.ward_id = w.ward_id
+    ON e.kothi_id = w.kothi_id
 
   LEFT JOIN public.designation des
     ON e.designation_id = des.designation_id
@@ -322,11 +329,11 @@ router.get("/short-report", async (req, res) => {
     ON des.department_id = dept.department_id
 
   LEFT JOIN (
-    SELECT sw.ward_id, STRING_AGG(u.name, ', ' ORDER BY u.name) AS supervisor_names
+    SELECT sw.kothi_id, STRING_AGG(u.name, ', ' ORDER BY u.name) AS supervisor_names
     FROM public.supervisor_ward sw
     JOIN public.users u ON u.user_id = sw.supervisor_id
-    GROUP BY sw.ward_id
-  ) sup ON sup.ward_id = w.ward_id
+    GROUP BY sw.kothi_id
+  ) sup ON sup.kothi_id = w.kothi_id
 
   LEFT JOIN (
     SELECT DISTINCT ON (emp_id)
@@ -349,14 +356,14 @@ router.get("/short-report", async (req, res) => {
   GROUP BY
     c.city_name,
     z.zone_name,
-    s.sector_name,
-    w.ward_id,
-    w.ward_name,
+    s.ward_name,
+    w.kothi_id,
+    w.kothi_name,
     sup.supervisor_names
 
   ORDER BY
-    s.sector_name ASC NULLS LAST,
-    w.ward_name ASC`,
+    s.ward_name ASC NULLS LAST,
+    w.kothi_name ASC`,
       params
     );
 

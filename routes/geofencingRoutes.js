@@ -8,13 +8,13 @@ const { authorize } = require("../middleware/permissionMiddleware");
 router.get("/summary", authenticate, async (req, res) => {
     try {
         const result = await pool.query(`
-            SELECT g.geofence_id, g.zone_id, g.ward_id, g.latitude, g.longitude, g.radius, g.unit,
-                   z.zone_name, c.city_name, w.ward_name
+            SELECT g.geofence_id, g.zone_id, g.kothi_id, g.latitude, g.longitude, g.radius, g.unit,
+                   z.zone_name, c.city_name, w.kothi_name
             FROM geofencing g
             LEFT JOIN zones z ON g.zone_id = z.zone_id
             LEFT JOIN cities c ON z.city_id = c.city_id
-            LEFT JOIN wards w ON g.ward_id = w.ward_id
-            ORDER BY c.city_name, z.zone_name, w.ward_name, g.geofence_id
+            LEFT JOIN kothis w ON g.kothi_id = w.kothi_id
+            ORDER BY c.city_name, z.zone_name, w.kothi_name, g.geofence_id
         `);
         console.log("Summary data returned:", result.rows);
         res.json(result.rows);
@@ -24,21 +24,21 @@ router.get("/summary", authenticate, async (req, res) => {
     }
 });
 
-// 🟢 Fetch geofencing rules for a specific zone or ward
+// 🟢 Fetch geofencing rules for a specific zone or kothi
 router.get("/", authenticate, async (req, res) => {
-    const { zoneId, wardId } = req.query;
+    const { zoneId, kothiId } = req.query;
     try {
         let query = "SELECT * FROM geofencing WHERE ";
         let params = [];
 
-        if (wardId) {
-            query += "ward_id = $1";
-            params.push(wardId);
+        if (kothiId) {
+            query += "kothi_id = $1";
+            params.push(kothiId);
         } else if (zoneId) {
-            query += "zone_id = $1 AND ward_id IS NULL";
+            query += "zone_id = $1 AND kothi_id IS NULL";
             params.push(zoneId);
         } else {
-            return res.status(400).json({ error: "Zone ID or Ward ID is required" });
+            return res.status(400).json({ error: "Zone ID or Kothi ID is required" });
         }
 
         const result = await pool.query(query + " ORDER BY geofence_id ASC", params);
@@ -54,7 +54,7 @@ router.get("/zone/:zoneId", authenticate, async (req, res) => {
     const { zoneId } = req.params;
     try {
         const result = await pool.query(
-            "SELECT * FROM geofencing WHERE zone_id = $1 AND ward_id IS NULL ORDER BY geofence_id ASC",
+            "SELECT * FROM geofencing WHERE zone_id = $1 AND kothi_id IS NULL ORDER BY geofence_id ASC",
             [zoneId]
         );
         res.json(result.rows);
@@ -64,12 +64,12 @@ router.get("/zone/:zoneId", authenticate, async (req, res) => {
     }
 });
 
-router.get("/ward/:wardId", authenticate, async (req, res) => {
-    const { wardId } = req.params;
+router.get("/kothi/:kothiId", authenticate, async (req, res) => {
+    const { kothiId } = req.params;
     try {
         const result = await pool.query(
-            "SELECT * FROM geofencing WHERE ward_id = $1 ORDER BY geofence_id ASC",
-            [wardId]
+            "SELECT * FROM geofencing WHERE kothi_id = $1 ORDER BY geofence_id ASC",
+            [kothiId]
         );
         res.json(result.rows);
     } catch (error) {
@@ -80,10 +80,10 @@ router.get("/ward/:wardId", authenticate, async (req, res) => {
 
 // 🟢 Save or Update geofencing rules
 router.post("/", authenticate, authorize("master", "manage"), async (req, res) => {
-    const { zone_id, ward_id, fences } = req.body;
+    const { zone_id, kothi_id, fences } = req.body;
 
-    if ((!zone_id && !ward_id) || !Array.isArray(fences)) {
-        return res.status(400).json({ error: "Zone ID/Ward ID and an array of fences are required" });
+    if ((!zone_id && !kothi_id) || !Array.isArray(fences)) {
+        return res.status(400).json({ error: "Zone ID/Kothi ID and an array of fences are required" });
     }
 
     const client = await pool.connect();
@@ -91,10 +91,10 @@ router.post("/", authenticate, authorize("master", "manage"), async (req, res) =
         await client.query("BEGIN");
 
         // 1. Delete existing rules
-        if (ward_id) {
-            await client.query("DELETE FROM geofencing WHERE ward_id = $1", [ward_id]);
+        if (kothi_id) {
+            await client.query("DELETE FROM geofencing WHERE kothi_id = $1", [kothi_id]);
         } else {
-            await client.query("DELETE FROM geofencing WHERE zone_id = $1 AND ward_id IS NULL", [zone_id]);
+            await client.query("DELETE FROM geofencing WHERE zone_id = $1 AND kothi_id IS NULL", [zone_id]);
         }
 
         // 2. Insert new rules
@@ -102,9 +102,9 @@ router.post("/", authenticate, authorize("master", "manage"), async (req, res) =
             const { latitude, longitude, radius, unit } = fence;
             if (latitude && longitude && radius) {
                 await client.query(
-                    `INSERT INTO geofencing (zone_id, ward_id, latitude, longitude, radius, unit) 
+                    `INSERT INTO geofencing (zone_id, kothi_id, latitude, longitude, radius, unit) 
                      VALUES ($1, $2, $3, $4, $5, $6)`,
-                    [zone_id || null, ward_id || null, latitude, longitude, radius, unit || 'meters']
+                    [zone_id || null, kothi_id || null, latitude, longitude, radius, unit || 'meters']
                 );
             }
         }
@@ -122,17 +122,17 @@ router.post("/", authenticate, authorize("master", "manage"), async (req, res) =
 
 // 🟢 Delete all geofences for a specific group
 router.delete("/group", authenticate, authorize("master", "manage"), async (req, res) => {
-    const { zone_id, ward_id } = req.query;
+    const { zone_id, kothi_id } = req.query;
 
-    if (!zone_id && !ward_id) {
-        return res.status(400).json({ error: "Zone ID or Ward ID is required" });
+    if (!zone_id && !kothi_id) {
+        return res.status(400).json({ error: "Zone ID or Kothi ID is required" });
     }
 
     try {
-        if (ward_id) {
-            await pool.query("DELETE FROM geofencing WHERE ward_id = $1", [ward_id]);
+        if (kothi_id) {
+            await pool.query("DELETE FROM geofencing WHERE kothi_id = $1", [kothi_id]);
         } else {
-            await pool.query("DELETE FROM geofencing WHERE zone_id = $1 AND ward_id IS NULL", [zone_id]);
+            await pool.query("DELETE FROM geofencing WHERE zone_id = $1 AND kothi_id IS NULL", [zone_id]);
         }
         res.json({ message: "Geofencing group deleted successfully" });
     } catch (error) {
@@ -183,7 +183,7 @@ router.post("/request", authenticate, (req, res, next) => {
         next();
     });
 }, async (req, res) => {
-    const { supervisor_name, phone_number, latitude, longitude, message, zone_id, ward_id } = req.body;
+    const { supervisor_name, phone_number, latitude, longitude, message, zone_id, kothi_id } = req.body;
     const input_emp_id = req.body.emp_id || req.user?.emp_id || req.user?.user_id || req.user?.id || null;
     const photo_url = req.file ? `/uploads/geofence_requests/${req.file.filename}` : null;
 
@@ -231,10 +231,10 @@ router.post("/request", authenticate, (req, res, next) => {
 
         const result = await pool.query(
             `INSERT INTO geofencing_requests 
-             (emp_id, zone_id, ward_id, supervisor_name, phone_number, latitude, longitude, photo_url, message, status)
+             (emp_id, zone_id, kothi_id, supervisor_name, phone_number, latitude, longitude, photo_url, message, status)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')
              RETURNING *`,
-            [emp_id || null, zone_id || null, ward_id || null, supervisor_name, phone_number || null, latitude || null, longitude || null, photo_url, message || null]
+            [emp_id || null, zone_id || null, kothi_id || null, supervisor_name, phone_number || null, latitude || null, longitude || null, photo_url, message || null]
         );
         res.status(201).json({ message: "Request submitted successfully", request: result.rows[0] });
     } catch (error) {
@@ -270,11 +270,11 @@ router.get("/requests", authenticate, async (req, res) => {
         const result = await pool.query(`
             SELECT gr.*, 
                    e.name AS emp_name, e.emp_code,
-                   z.zone_name, w.ward_name, c.city_name
+                   z.zone_name, w.kothi_name, c.city_name
             FROM geofencing_requests gr
             LEFT JOIN employee e ON gr.emp_id = e.emp_id
             LEFT JOIN zones z ON gr.zone_id = z.zone_id
-            LEFT JOIN wards w ON gr.ward_id = w.ward_id
+            LEFT JOIN kothis w ON gr.kothi_id = w.kothi_id
             LEFT JOIN cities c ON z.city_id = c.city_id
             ORDER BY gr.created_at DESC
         `);
@@ -307,42 +307,42 @@ router.patch("/requests/:id", authenticate, authorize("master", "manage"), async
 
         const updatedRequest = result.rows[0];
 
-        // Resolve ward/zone if missing: prefer payload → request → employee record
-        let finalWardId = req.body.ward_id || updatedRequest.ward_id;
+        // Resolve kothi/zone if missing: prefer payload → request → employee record
+        let finalWardId = req.body.kothi_id || updatedRequest.kothi_id;
         let finalZoneId = req.body.zone_id || updatedRequest.zone_id;
 
         if ((!finalWardId || !finalZoneId) && updatedRequest.emp_id) {
             try {
                 const empLookup = await pool.query(
-                    "SELECT ward_id, zone_id FROM employee WHERE emp_id = $1 LIMIT 1",
+                    "SELECT kothi_id, zone_id FROM employee WHERE emp_id = $1 LIMIT 1",
                     [updatedRequest.emp_id]
                 );
                 if (empLookup.rows.length > 0) {
-                    finalWardId = finalWardId || empLookup.rows[0].ward_id || null;
+                    finalWardId = finalWardId || empLookup.rows[0].kothi_id || null;
                     finalZoneId = finalZoneId || empLookup.rows[0].zone_id || null;
                 }
             } catch (lookupErr) {
-                console.warn("Geofence approval: could not resolve employee ward/zone", lookupErr);
+                console.warn("Geofence approval: could not resolve employee kothi/zone", lookupErr);
             }
         }
 
         // 📍 If approved, automatically create a geofence rule using the coordinates from the request
         if (status === "approved" && updatedRequest.latitude && updatedRequest.longitude) {
             try {
-                // Check if fence already exists for this ward/zone to avoid duplicates
+                // Check if fence already exists for this kothi/zone to avoid duplicates
                 const existing = await pool.query(
-                    "SELECT geofence_id FROM geofencing WHERE ward_id = $1 AND latitude = $2 AND longitude = $3",
+                    "SELECT geofence_id FROM geofencing WHERE kothi_id = $1 AND latitude = $2 AND longitude = $3",
                     [finalWardId, updatedRequest.latitude, updatedRequest.longitude]
                 );
 
                 if (existing.rows.length === 0) {
                     // Default to 150m radius for safety
                     await pool.query(
-                        `INSERT INTO geofencing (zone_id, ward_id, latitude, longitude, radius, unit)
+                        `INSERT INTO geofencing (zone_id, kothi_id, latitude, longitude, radius, unit)
                         VALUES ($1, $2, $3, $4, $5, $6)`,
                         [finalZoneId || null, finalWardId || null, updatedRequest.latitude, updatedRequest.longitude, 150, 'meters']
                     );
-                    console.log(`✅ Auto-created geofence for ward ${finalWardId} upon approval.`);
+                    console.log(`✅ Auto-created geofence for kothi ${finalWardId} upon approval.`);
                 }
             } catch (autoErr) {
                 console.error("Failed to auto-create geofence entry:", autoErr);
@@ -366,11 +366,11 @@ router.delete("/requests/:id", authenticate, authorize("master", "manage"), asyn
         }
         const reqRow = existing.rows[0];
 
-        // Remove matching geofence entry if it was created with the same ward/coords
-        if (reqRow.ward_id && reqRow.latitude && reqRow.longitude) {
+        // Remove matching geofence entry if it was created with the same kothi/coords
+        if (reqRow.kothi_id && reqRow.latitude && reqRow.longitude) {
             await pool.query(
-                "DELETE FROM geofencing WHERE ward_id = $1 AND latitude = $2 AND longitude = $3",
-                [reqRow.ward_id, reqRow.latitude, reqRow.longitude]
+                "DELETE FROM geofencing WHERE kothi_id = $1 AND latitude = $2 AND longitude = $3",
+                [reqRow.kothi_id, reqRow.latitude, reqRow.longitude]
             );
         }
 

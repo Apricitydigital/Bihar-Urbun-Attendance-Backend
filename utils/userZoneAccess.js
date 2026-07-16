@@ -53,29 +53,29 @@ const fetchUserZoneAccess = async (user, options = {}) => {
   );
   let zoneIds = normalizeZoneIds(directZoneRows.rows.map((row) => row.zone_id));
 
-  // 2) Derive from ward/kothi assignments if no direct zones
+  // 2) Derive from kothi/kothi assignments if no direct zones
   if (zoneIds.length === 0) {
     const derivedZoneRows = await pool.query(
       `
         SELECT DISTINCT COALESCE(w.zone_id, s.zone_id) AS zone_id
         FROM (
-          SELECT ward_id FROM user_kothi_access WHERE user_id = $1
+          SELECT kothi_id FROM user_kothi_access WHERE user_id = $1
           UNION
-          SELECT ward_id FROM supervisor_kothi WHERE supervisor_id = $1
+          SELECT kothi_id FROM supervisor_kothi WHERE supervisor_id = $1
           UNION
-          SELECT ward_id FROM supervisor_ward WHERE supervisor_id = $1
+          SELECT kothi_id FROM supervisor_ward WHERE supervisor_id = $1
           UNION
-          -- Legacy fallback: only treat supervisor_ward.ward_id as sector_id
-          -- when that value does not exist as a real ward_id.
-          SELECT w.ward_id
+          -- Legacy fallback: only treat supervisor_ward.kothi_id as ward_id
+          -- when that value does not exist as a real kothi_id.
+          SELECT w.kothi_id
           FROM supervisor_ward sw_legacy
-          LEFT JOIN wards w_direct ON w_direct.ward_id = sw_legacy.ward_id
-          JOIN wards w ON w.sector_id = sw_legacy.ward_id
+          LEFT JOIN kothis w_direct ON w_direct.kothi_id = sw_legacy.kothi_id
+          JOIN kothis w ON w.ward_id = sw_legacy.kothi_id
           WHERE sw_legacy.supervisor_id = $1
-            AND w_direct.ward_id IS NULL
+            AND w_direct.kothi_id IS NULL
         ) k
-        JOIN wards w ON w.ward_id = k.ward_id
-        LEFT JOIN sectors s ON s.sector_id = w.sector_id
+        JOIN kothis w ON w.kothi_id = k.kothi_id
+        LEFT JOIN wards s ON s.ward_id = w.ward_id
         WHERE COALESCE(w.zone_id, s.zone_id) IS NOT NULL
       `,
       [userId]

@@ -113,14 +113,14 @@ router.get("/daily", async (req, res) => {
         e.phone AS phone,
         d.designation_name AS designation,
         dept.department_name AS department,
-        w.ward_name AS ward,
+        w.kothi_name AS kothi,
         z.zone_name AS zone,
         c.city_name AS city,
         c.state AS state
       FROM employee e
       LEFT JOIN designation d ON e.designation_id = d.designation_id
       LEFT JOIN department dept ON d.department_id = dept.department_id
-      LEFT JOIN wards w ON e.ward_id = w.ward_id
+      LEFT JOIN kothis w ON e.kothi_id = w.kothi_id
       LEFT JOIN zones z ON w.zone_id = z.zone_id
       LEFT JOIN cities c ON z.city_id = c.city_id
       WHERE e.emp_id = $1
@@ -293,20 +293,20 @@ router.get("/", async (req, res) => {
        e.emp_code as "empCode", 
        e.name AS "name", 
        e.phone AS "phone", 
-       w.ward_name AS "ward", 
+       w.kothi_name AS "kothi", 
        z.zone_name AS "zone", 
        c.city_name AS "city", 
        c.state AS "state", 
 	     e.face_id as "faceId",
        COUNT(CASE WHEN a.punch_in_time IS NOT NULL THEN a.attendance_id END) AS "totalAttendance"
 FROM employee e
-JOIN wards w ON e.ward_id = w.ward_id
+JOIN kothis w ON e.kothi_id = w.kothi_id
 JOIN zones z ON w.zone_id = z.zone_id
 JOIN cities c ON z.city_id = c.city_id
 LEFT JOIN attendance a ON e.emp_id = a.emp_id 
     AND TO_CHAR(a.date, 'yyyy-MM') = $1
 WHERE e.emp_id = $2
-GROUP BY e.emp_id, w.ward_name, z.zone_name, c.city_name, c.state;
+GROUP BY e.emp_id, w.kothi_name, z.zone_name, c.city_name, c.state;
         `;
 
     const { rows } = await pool.query(query, [month, empId]);

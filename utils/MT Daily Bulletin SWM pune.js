@@ -82,7 +82,7 @@ const generateDailyBulletinData = async (overrideDate) => {
       COUNT(DISTINCT CASE WHEN COALESCE(att.is_present, 0) = 0 AND COALESCE(att.is_on_leave, 0) = 0 THEN e.emp_id END) AS absent,
       COUNT(DISTINCT CASE WHEN att.has_mid_shift_punch_in = 1 THEN e.emp_id END) AS mid_shift_punch_in
     FROM employee e
-    JOIN wards w ON e.ward_id = w.ward_id
+    JOIN kothis w ON e.kothi_id = w.kothi_id
     JOIN zones z ON w.zone_id = z.zone_id
     JOIN cities c ON z.city_id = c.city_id
     LEFT JOIN attendance_summary att ON att.emp_id = e.emp_id
@@ -119,7 +119,7 @@ const generateDailyBulletinData = async (overrideDate) => {
       COUNT(DISTINCT CASE WHEN COALESCE(att.is_present, 0) = 0 AND COALESCE(att.is_on_leave, 0) = 0 THEN e.emp_id END) AS absent,
       COUNT(DISTINCT CASE WHEN att.has_mid_shift_punch_in = 1 THEN e.emp_id END) AS mid_shift_punch_in
     FROM employee e
-    JOIN wards w ON e.ward_id = w.ward_id
+    JOIN kothis w ON e.kothi_id = w.kothi_id
     JOIN zones z ON w.zone_id = z.zone_id
     JOIN cities c ON z.city_id = c.city_id
     LEFT JOIN attendance_summary att ON att.emp_id = e.emp_id
@@ -213,7 +213,7 @@ Detailed Zone Summary 🏙️
 ${detailedZoneBlocks.join("\n\n")}
 
 Tomorrow’s Focus 🎯
-✅ Improve attendance in high-absence wards, especially in ${tomorrowFocusZonesStr}.
+✅ Improve attendance in high-absence kothis, especially in ${tomorrowFocusZonesStr}.
 —
 Matrix Track Daily Bulletin | Human Matrix | PMC SWM Pune
 Powered by Apricity Digital Labs Pvt Ltd`;

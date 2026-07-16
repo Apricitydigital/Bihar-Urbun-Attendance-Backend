@@ -75,32 +75,32 @@ const formatTime = (pgTime) => {
   }
 };
 
-// ── Fetch all supervisors with their ward/zone/kothi info ────
+// ── Fetch all supervisors with their kothi/zone/kothi info ────
 const fetchAllSupervisors = async () => {
   const query = `
     SELECT DISTINCT
       u.user_id,
       u.name        AS supervisor_name,
       u.phone       AS supervisor_mobile,
-      w.ward_id,
-      w.ward_name,
+      w.kothi_id,
+      w.kothi_name,
       z.zone_id,
       z.zone_name,
       c.city_id,
       c.city_name,
-      w.ward_name   AS kothi_name
+      w.kothi_name   AS kothi_name
     FROM users u
     JOIN supervisor_ward sw ON sw.supervisor_id = u.user_id
-    JOIN wards w ON w.ward_id = sw.ward_id
+    JOIN kothis w ON w.kothi_id = sw.kothi_id
     JOIN zones z ON z.zone_id = w.zone_id
     JOIN cities c ON c.city_id = z.city_id
     WHERE u.role = 'supervisor'
       AND c.city_name = 'Pune'
-    ORDER BY u.user_id, w.ward_id
+    ORDER BY u.user_id, w.kothi_id
   `;
   const { rows } = await pool.query(query);
 
-  // Group by user_id — one supervisor may have multiple wards
+  // Group by user_id — one supervisor may have multiple kothis
   const supervisorMap = {};
   rows.forEach((row) => {
     if (!supervisorMap[row.user_id]) {
@@ -110,12 +110,12 @@ const fetchAllSupervisors = async () => {
         supervisor_mobile: row.supervisor_mobile,
         zone_name:         row.zone_name,
         zone_id:           row.zone_id,
-        ward_name:         row.ward_name,
+        kothi_name:         row.kothi_name,
         kothi_name:        row.kothi_name,
         ward_ids:          [],
       };
     }
-    supervisorMap[row.user_id].ward_ids.push(row.ward_id);
+    supervisorMap[row.user_id].ward_ids.push(row.kothi_id);
   });
 
   return Object.values(supervisorMap);
@@ -133,11 +133,11 @@ const fetchTodayStats = async (wardIds, isoDate) => {
       TO_CHAR(MIN(a.punch_in_time::time),  'HH24:MI')   AS earliest_in,
       TO_CHAR(MAX(a.punch_in_time::time),  'HH24:MI')   AS latest_in
     FROM employee e
-    JOIN wards w ON w.ward_id = e.ward_id
+    JOIN kothis w ON w.kothi_id = e.kothi_id
     LEFT JOIN attendance a
       ON a.emp_id   = e.emp_id
      AND a.date::date = $1::date
-    WHERE e.ward_id = ANY($2::int[])
+    WHERE e.kothi_id = ANY($2::int[])
   `;
   const { rows } = await pool.query(query, [isoDate, wardIds]);
   const row = rows[0] || {};
@@ -187,7 +187,7 @@ const fetchWeeklyStats = async (wardIds, weekStartIso, isoDate) => {
       FROM employee e
       LEFT JOIN attendance a
         ON a.emp_id = e.emp_id AND a.date::date = $1::date
-      WHERE e.ward_id = ANY($2::int[])
+      WHERE e.kothi_id = ANY($2::int[])
     `;
     const { rows } = await pool.query(q, [dayIso, wardIds]);
     const row     = rows[0] || {};
@@ -213,7 +213,7 @@ const fetchZoneRank = async (supervisorUserId, zoneId, isoDate) => {
       WITH zone_supervisors AS (
         SELECT DISTINCT sw.supervisor_id
         FROM supervisor_ward sw
-        JOIN wards w ON w.ward_id = sw.ward_id
+        JOIN kothis w ON w.kothi_id = sw.kothi_id
         WHERE w.zone_id = $1
       ),
       sup_rates AS (
@@ -228,7 +228,7 @@ const fetchZoneRank = async (supervisorUserId, zoneId, isoDate) => {
           END AS rate
         FROM zone_supervisors zs
         JOIN supervisor_ward sw ON sw.supervisor_id = zs.supervisor_id
-        JOIN employee e ON e.ward_id = sw.ward_id
+        JOIN employee e ON e.kothi_id = sw.kothi_id
         LEFT JOIN attendance a ON a.emp_id = e.emp_id AND a.date::date = $2::date
         GROUP BY zs.supervisor_id
       )
@@ -267,7 +267,7 @@ const buildPayload = (phoneNumber, sup, today, week, rankData) => ({
             body_1:  { type: "text", value: String(sup.supervisor_name) },         // {{1}} Name
             body_2:  { type: "text", value: String(sup.displayDate) },             // {{2}} Date
             body_3:  { type: "text", value: String(sup.zone_name) },               // {{3}} Zone
-            body_4:  { type: "text", value: String(sup.ward_name) },               // {{4}} Ward
+            body_4:  { type: "text", value: String(sup.kothi_name) },               // {{4}} Kothi
             body_5:  { type: "text", value: String(sup.kothi_name) },              // {{5}} Kothi
             body_6:  { type: "text", value: String(today.total) },                 // {{6}} Total
             body_7:  { type: "text", value: String(today.present) },               // {{7}} Present

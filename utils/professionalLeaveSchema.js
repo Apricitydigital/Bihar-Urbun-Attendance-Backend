@@ -79,8 +79,8 @@ const ensureProfessionalLeaveSchema = async () => {
             description TEXT,
             city_id INTEGER NOT NULL REFERENCES cities(city_id) ON DELETE CASCADE,
             zone_id INTEGER REFERENCES zones(zone_id) ON DELETE SET NULL,
-            ward_id INTEGER REFERENCES sectors(sector_id) ON DELETE SET NULL,
             kothi_id INTEGER REFERENCES wards(ward_id) ON DELETE SET NULL,
+            kothi_id INTEGER REFERENCES kothis(kothi_id) ON DELETE SET NULL,
             created_by INTEGER REFERENCES users(user_id),
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_by INTEGER REFERENCES users(user_id),
@@ -94,14 +94,14 @@ const ensureProfessionalLeaveSchema = async () => {
             holiday_date,
             city_id,
             COALESCE(zone_id, -1),
-            COALESCE(ward_id, -1),
+            COALESCE(kothi_id, -1),
             COALESCE(kothi_id, -1)
           )
         `);
 
         await client.query(`
           CREATE INDEX IF NOT EXISTS idx_prof_holidays_date_city
-          ON professional_holidays (holiday_date DESC, city_id, zone_id, ward_id, kothi_id)
+          ON professional_holidays (holiday_date DESC, city_id, zone_id, kothi_id, kothi_id)
         `);
 
         await client.query(`
@@ -116,7 +116,7 @@ const ensureProfessionalLeaveSchema = async () => {
             description TEXT,
             city_id INTEGER NOT NULL,
             zone_id INTEGER,
-            ward_id INTEGER,
+            kothi_id INTEGER,
             kothi_id INTEGER,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
           )

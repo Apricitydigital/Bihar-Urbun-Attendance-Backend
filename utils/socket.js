@@ -15,9 +15,9 @@ module.exports = {
     io.on("connection", (socket) => {
       logger.info(`[Socket.io] Client connected: ${socket.id}`);
 
-      // Example: A supervisor can join a room specific to their ward or zone
-      // socket.on('join_ward', (wardId) => {
-      //   socket.join(`ward_${wardId}`);
+      // Example: A supervisor can join a room specific to their kothi or zone
+      // socket.on('join_ward', (kothiId) => {
+      //   socket.join(`ward_${kothiId}`);
       // });
 
       socket.on("disconnect", () => {

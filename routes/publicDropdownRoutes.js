@@ -23,7 +23,7 @@ router.use(apiLimiter);
 
 router.get('/cities', getCities);
 router.get('/zones', getZones);
-router.get('/wards', getWards);
+router.get('/kothis', getWards);
 router.get('/kothis', getKothis);
 
 module.exports = router;

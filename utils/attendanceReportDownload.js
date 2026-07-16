@@ -1,8 +1,9 @@
 const SUPPORTED_FORMATS = new Set(["csv", "json"]);
 const SUPPORTED_GROUPINGS = new Set([
   "detail",
+  "simple", // <-- ADD THIS
   "zone",
-  "ward",
+  "kothi",
   "city",
   "supervisor",
   "location",
@@ -44,7 +45,8 @@ const buildExcelDocument = async (rows, headers, summaryRowData = null) => {
             }
           }
         }
-        rowData[header.key] = rawValue ?? "";
+
+        rowData[header.key] = rawValue;
       });
       const addedRow = sheet.addRow(rowData);
       headers.forEach((header, idx) => {
@@ -191,7 +193,7 @@ const buildAttendanceFilters = (query, { locationExpression, cityScope, kothiSco
   }
 
   addNumericFilter(query.zone_id, (ph) => `z.zone_id = ${ph}`, "zone_id");
-  addNumericFilter(query.ward_id, (ph) => `w.ward_id = ${ph}`, "ward_id");
+  addNumericFilter(query.kothi_id, (ph) => `w.kothi_id = ${ph}`, "kothi_id");
   addNumericFilter(query.city_id, (ph) => `c.city_id = ${ph}`, "city_id");
   addNumericFilter(query.supervisor_id, (ph) => `supervisor.user_id = ${ph}`, "supervisor_id");
   addNumericFilter(query.employee_id, (ph) => `a.emp_id = ${ph}`, "employee_id");
@@ -206,9 +208,9 @@ const buildAttendanceFilters = (query, { locationExpression, cityScope, kothiSco
     { wildcard: true }
   );
   addTextFilter(
-    query.ward_name,
-    (ph) => `w.ward_name ILIKE ${ph}`,
-    "ward_name",
+    query.kothi_name,
+    (ph) => `w.kothi_name ILIKE ${ph}`,
+    "kothi_name",
     { wildcard: true }
   );
   addTextFilter(
@@ -287,7 +289,7 @@ const buildAttendanceFilters = (query, { locationExpression, cityScope, kothiSco
     } else {
       params.push(kothiScope.ids);
       const placeholder = `$${params.length}`;
-      filters.push(`w.ward_id = ANY(${placeholder})`);
+      filters.push(`w.kothi_id = ANY(${placeholder})`);
       metadata.kothi_scope = kothiScope.ids;
     }
   }
@@ -332,7 +334,7 @@ const buildSupervisorSummaryFilters = (query, { cityScope, kothiScope }) => {
 
   addNumericFilter(query.city_id, (ph) => `c.city_id = ${ph}`, "city_id");
   addNumericFilter(query.zone_id, (ph) => `z.zone_id = ${ph}`, "zone_id");
-  addNumericFilter(query.ward_id, (ph) => `w.ward_id = ${ph}`, "ward_id");
+  addNumericFilter(query.kothi_id, (ph) => `w.kothi_id = ${ph}`, "kothi_id");
   addNumericFilter(
     query.supervisor_id,
     (ph) => `supervisor.user_id = ${ph}`,
@@ -361,7 +363,7 @@ const buildSupervisorSummaryFilters = (query, { cityScope, kothiScope }) => {
     } else {
       params.push(kothiScope.ids);
       const placeholder = `$${params.length}`;
-      filters.push(`w.ward_id = ANY(${placeholder})`);
+      filters.push(`w.kothi_id = ANY(${placeholder})`);
       metadata.kothi_scope = kothiScope.ids;
     }
   }
@@ -383,12 +385,16 @@ const groupingConfigs = {
       e.emp_id AS emp_id,
       e.name AS employee_name,
       e.emp_code,
-      e.phone AS contact_no,
-      TO_CHAR(a.date, 'DD-MM-YYYY') AS attendance_date,
-      TO_CHAR(a.punch_in_time, 'HH24:MI:SS') AS punch_in_time,
-      TO_CHAR(a.mid_shift_punch_in_time, 'HH24:MI:SS') AS mid_shift_punch_in_time,
-      TO_CHAR(a.punch_out_time, 'HH24:MI:SS') AS punch_out_time,
       a.leave_type,
+      e.phone AS contact_no,
+      a.date,
+TO_CHAR(a.date, 'DD-MM-YYYY') AS attendance_date,
+      TO_CHAR(a.punch_in_time AT TIME ZONE 'Asia/Kolkata', 'HH24:MI:SS') AS punch_in_time,
+      TO_CHAR(a.mid_shift_punch_in_time AT TIME ZONE 'Asia/Kolkata', 'HH24:MI:SS') AS mid_shift_punch_in_time,
+      TO_CHAR(a.punch_out_time AT TIME ZONE 'Asia/Kolkata', 'HH24:MI:SS') AS punch_out_time,
+      a.punch_in_image,
+      a.mid_shift_punch_in_image,
+      a.punch_out_image,
       a.duration,
       a.in_address,
       a.out_address,
@@ -399,8 +405,8 @@ const groupingConfigs = {
       a.mid_in_address,
       a.latitude_mid_in,
       a.longitude_mid_in,
-      w.ward_id,
-      w.ward_name,
+      w.kothi_id,
+      w.kothi_name,
       z.zone_id,
       z.zone_name,
       c.city_name,
@@ -416,27 +422,45 @@ const groupingConfigs = {
       END AS punched_out_by
     `,
     orderBy: "a.date DESC, a.attendance_id DESC",
-    csvHeaders: [
+    csvHeaders: ({ baseUrl }) => [
       { key: "sr_no", label: "Sr No." },
       { key: "attendance_date", label: "Date" },
       { key: "zone_name", label: "Zone", formatter: (val) => val || "-" },
-      { key: "ward_name", label: "Ward", formatter: (val) => val || "-" },
+      { key: "kothi_name", label: "Kothi", formatter: (val) => val || "-" },
+      { key: "department_name", label: "Department", formatter: (val) => val || "-" },
+      { key: "designation_name", label: "Designation", formatter: (val) => val || "-" },
       { key: "employee_name", label: "Employee Name", formatter: (val) => val || "-" },
       { key: "leave_type", label: "Leave Type", formatter: (val) => val || "-" },
       { key: "emp_code", label: "Emp Code", formatter: (val) => val ? `="${val}"` : "-" },
       { key: "contact_no", label: "Contact No.", formatter: (val) => val ? `="${val}"` : "-" },
       { key: "punch_in_time", label: "Punch In Time", formatter: (val) => val || "-" },
+      { key: "punch_in_image", label: "Punch In Image", formatter: (val, row) => val ? { text: "view", hyperlink: `${baseUrl}/app/attendance/employee/image?attendance_id=${row.attendance_id}&punch_type=in` } : "-" },
       { key: "punched_in_by", label: "Punched In By", formatter: (val, row) => row.punch_in_time ? val : "-" },
+      { key: "in_address", label: "In Address", formatter: (val) => val || "-" },
+      { key: "latitude_in", label: "In Lat / Long", formatter: (_, row) => (row.latitude_in && row.longitude_in) ? { text: `${Number(row.latitude_in).toFixed(6)}, ${Number(row.longitude_in).toFixed(6)}`, hyperlink: `https://www.google.com/maps?q=${row.latitude_in},${row.longitude_in}` } : "-" },
       { key: "mid_shift_punch_in_time", label: "Mid Shift Punch In", formatter: (val) => val || "-" },
+      { key: "mid_shift_punch_in_image", label: "Mid In Image", formatter: (val, row) => val ? { text: "view", hyperlink: `${baseUrl}/app/attendance/employee/image?attendance_id=${row.attendance_id}&punch_type=mid_in` } : "-" },
       { key: "mid_shift_punched_in_by", label: "Mid Shift Punched By", formatter: (val, row) => row.mid_shift_punch_in_time ? val : "-" },
       { key: "mid_in_address", label: "Mid In Address", formatter: (val) => val || "-" },
-      { key: "latitude_mid_in", label: "Mid In Lat / Long", formatter: (_, row) => (row.latitude_mid_in && row.longitude_mid_in) ? `=HYPERLINK("https://www.google.com/maps?q=${row.latitude_mid_in},${row.longitude_mid_in}", "${Number(row.latitude_mid_in).toFixed(6)}, ${Number(row.longitude_mid_in).toFixed(6)}")` : "-" },
-      { key: "in_address", label: "In Address", formatter: (val) => val || "-" },
-      { key: "latitude_in", label: "In Lat / Long", formatter: (_, row) => (row.latitude_in && row.longitude_in) ? `=HYPERLINK("https://www.google.com/maps?q=${row.latitude_in},${row.longitude_in}", "${Number(row.latitude_in).toFixed(6)}, ${Number(row.longitude_in).toFixed(6)}")` : "-" },
+      { key: "latitude_mid_in", label: "Mid In Lat / Long", formatter: (_, row) => (row.latitude_mid_in && row.longitude_mid_in) ? { text: `${Number(row.latitude_mid_in).toFixed(6)}, ${Number(row.longitude_mid_in).toFixed(6)}`, hyperlink: `https://www.google.com/maps?q=${row.latitude_mid_in},${row.longitude_mid_in}` } : "-" },
       { key: "punch_out_time", label: "Punch Out Time", formatter: (val) => val || "-" },
+      { key: "punch_out_image", label: "Punch Out Image", formatter: (val, row) => val ? { text: "view", hyperlink: `${baseUrl}/app/attendance/employee/image?attendance_id=${row.attendance_id}&punch_type=out` } : "-" },
       { key: "punched_out_by", label: "Punched Out By", formatter: (val, row) => row.punch_out_time ? val : "-" },
       { key: "out_address", label: "Out Address", formatter: (val) => val || "-" },
-      { key: "latitude_out", label: "Out Lat / Long", formatter: (_, row) => (row.latitude_out && row.longitude_out) ? `=HYPERLINK("https://www.google.com/maps?q=${row.latitude_out},${row.longitude_out}", "${Number(row.latitude_out).toFixed(6)}, ${Number(row.longitude_out).toFixed(6)}")` : "-" },
+      { key: "latitude_out", label: "Out Lat / Long", formatter: (_, row) => (row.latitude_out && row.longitude_out) ? { text: `${Number(row.latitude_out).toFixed(6)}, ${Number(row.longitude_out).toFixed(6)}`, hyperlink: `https://www.google.com/maps?q=${row.latitude_out},${row.longitude_out}` } : "-" },
+    ],
+  },
+  simple: {
+    label: "Simple Attendance Report",
+    filenameSuffix: "simple-attendance",
+
+    csvHeaders: [
+      { key: "sr_no", label: "Sr No." },
+      { key: "emp_code", label: "Employee Code" },
+      { key: "employee_name", label: "Employee Name" },
+      { key: "kothi_name", label: "Kothi" },
+      { key: "zone_name", label: "Zone" },
+      { key: "employee_type", label: "Employee Type" },
     ],
   },
   zone: {
@@ -454,8 +478,8 @@ const groupingConfigs = {
       COUNT(a.punch_out_time) AS punch_out_count,
       TO_CHAR(MIN(a.date), 'DD-MM-YYYY') AS first_attendance_date,
       TO_CHAR(MAX(a.date), 'DD-MM-YYYY') AS last_attendance_date,
-      TO_CHAR(MIN(a.punch_in_time), 'DD-MM-YYYY HH24:MI:SS') AS first_punch_in_time,
-      TO_CHAR(MAX(a.punch_out_time), 'DD-MM-YYYY HH24:MI:SS') AS last_punch_out_time
+      TO_CHAR(MIN(a.punch_in_time) AT TIME ZONE 'Asia/Kolkata', 'DD-MM-YYYY HH24:MI:SS') AS first_punch_in_time,
+      TO_CHAR(MAX(a.punch_out_time) AT TIME ZONE 'Asia/Kolkata', 'DD-MM-YYYY HH24:MI:SS') AS last_punch_out_time
     `,
     groupBy: "z.zone_id, z.zone_name, c.city_id, c.city_name",
     orderBy: "c.city_name, z.zone_name",
@@ -475,12 +499,12 @@ const groupingConfigs = {
       { key: "last_punch_out_time", label: "Last Punch Out" },
     ],
   },
-  ward: {
-    label: "Ward",
-    filenameSuffix: "ward",
+  kothi: {
+    label: "Kothi",
+    filenameSuffix: "kothi",
     select: () => `
-      w.ward_id,
-      w.ward_name,
+      w.kothi_id,
+      w.kothi_name,
       z.zone_id,
       z.zone_name,
       c.city_id,
@@ -495,11 +519,11 @@ const groupingConfigs = {
       TO_CHAR(MAX(a.date), 'DD-MM-YYYY') AS last_attendance_date
     `,
     groupBy:
-      "w.ward_id, w.ward_name, z.zone_id, z.zone_name, c.city_id, c.city_name",
-    orderBy: "c.city_name, z.zone_name, w.ward_name",
+      "w.kothi_id, w.kothi_name, z.zone_id, z.zone_name, c.city_id, c.city_name",
+    orderBy: "c.city_name, z.zone_name, w.kothi_name",
     csvHeaders: [
-      { key: "ward_id", label: "Ward ID" },
-      { key: "ward_name", label: "Ward" },
+      { key: "kothi_id", label: "Kothi ID" },
+      { key: "kothi_name", label: "Kothi" },
       { key: "zone_id", label: "Zone ID" },
       { key: "zone_name", label: "Zone" },
       { key: "city_id", label: "City ID" },
@@ -551,7 +575,7 @@ const groupingConfigs = {
       COALESCE(supervisor.user_id, 0) AS supervisor_id,
       COALESCE(supervisor.name, 'Unassigned') AS supervisor_name,
       COALESCE(supervisor.emp_code, 'N/A') AS supervisor_emp_code,
-      COALESCE(array_to_string(array_agg(DISTINCT w.ward_name), ', '), 'N/A') AS wards_covered,
+      COALESCE(array_to_string(array_agg(DISTINCT w.kothi_name), ', '), 'N/A') AS wards_covered,
       COALESCE(array_to_string(array_agg(DISTINCT z.zone_name), ', '), 'N/A') AS zones_covered,
       COALESCE(array_to_string(array_agg(DISTINCT c.city_name), ', '), 'N/A') AS cities_covered,
       COUNT(*) AS total_records,
@@ -569,7 +593,7 @@ const groupingConfigs = {
       { key: "supervisor_id", label: "Supervisor ID" },
       { key: "supervisor_emp_code", label: "Supervisor Code" },
       { key: "supervisor_name", label: "Supervisor" },
-      { key: "wards_covered", label: "Wards" },
+      { key: "wards_covered", label: "Kothis" },
       { key: "zones_covered", label: "Zones" },
       { key: "cities_covered", label: "Cities" },
       { key: "total_records", label: "Attendance Rows" },
@@ -601,17 +625,17 @@ const groupingConfigs = {
     `,
     orderBy: "supervisor_name",
     fromOverride: `
-      FROM wards w
+      FROM kothis w
       JOIN zones z ON w.zone_id = z.zone_id
       JOIN cities c ON z.city_id = c.city_id
     `,
     joinOverride: `
-      LEFT JOIN supervisor_ward sw ON w.ward_id = sw.ward_id
+      LEFT JOIN supervisor_ward sw ON w.kothi_id = sw.kothi_id
       LEFT JOIN users supervisor ON sw.supervisor_id = supervisor.user_id
       LEFT JOIN LATERAL (
         SELECT DISTINCT emp.emp_id
         FROM employee emp
-        WHERE emp.ward_id = w.ward_id
+        WHERE emp.kothi_id = w.kothi_id
       ) emp_all ON true
       LEFT JOIN attendance a_yesterday ON a_yesterday.emp_id = emp_all.emp_id
         AND a_yesterday.date = (CURRENT_DATE - INTERVAL '1 day')
@@ -635,7 +659,7 @@ const groupingConfigs = {
     filenameSuffix: "location",
     select: ({ locationExpression }) => `
       ${locationExpression} AS location_label,
-      COALESCE(array_to_string(array_agg(DISTINCT w.ward_name), ', '), 'N/A') AS wards,
+      COALESCE(array_to_string(array_agg(DISTINCT w.kothi_name), ', '), 'N/A') AS kothis,
       COALESCE(array_to_string(array_agg(DISTINCT z.zone_name), ', '), 'N/A') AS zones,
       COALESCE(array_to_string(array_agg(DISTINCT c.city_name), ', '), 'N/A') AS cities,
       COUNT(DISTINCT a.attendance_id) AS total_records,
@@ -650,7 +674,7 @@ const groupingConfigs = {
     orderBy: "location_label",
     csvHeaders: [
       { key: "location_label", label: "Location" },
-      { key: "wards", label: "Ward(s)" },
+      { key: "kothis", label: "Kothi(s)" },
       { key: "zones", label: "Zone(s)" },
       { key: "cities", label: "City(s)" },
       { key: "total_records", label: "Attendance Rows" },
@@ -663,18 +687,18 @@ const groupingConfigs = {
     ],
   },
   ward_summary: {
-    label: "Ward Summary",
-    filenameSuffix: "ward-summary",
+    label: "Kothi Summary",
+    filenameSuffix: "kothi-summary",
     select: () => `
       c.city_name AS city_name,
       z.zone_name AS zone_name,
-      w.ward_name AS kothi_name,
+      w.kothi_name AS kothi_name,
       COALESCE(supervisor_agg.supervisor_names, 'Unassigned') AS supervisor_name,
-      (SELECT COUNT(*) FROM employee reg WHERE reg.ward_id = w.ward_id) AS total_registered,
+      (SELECT COUNT(*) FROM employee reg WHERE reg.kothi_id = w.kothi_id) AS total_registered,
       COUNT(DISTINCT CASE WHEN a.punch_in_time IS NOT NULL THEN a.emp_id END) AS total_present
     `,
-    groupBy: `c.city_name, z.zone_name, w.ward_name, supervisor_agg.supervisor_names`,
-    orderBy: "c.city_name, z.zone_name, w.ward_name",
+    groupBy: `c.city_name, z.zone_name, w.kothi_name, supervisor_agg.supervisor_names`,
+    orderBy: "c.city_name, z.zone_name, w.kothi_name",
     csvHeaders: [
       { key: "city_name", label: "City" },
       { key: "zone_name", label: "Zone" },
@@ -729,6 +753,7 @@ const createAttendanceDownloadHandler =
         if (!cityScope.all) {
           const allowedIds = (cityScope.ids || []).map((id) => Number(id));
           if (!allowedIds.length) {
+            console.error("403 ERROR 1: allowedIds is empty", { cityScope });
             return res
               .status(403)
               .json({ error: "No city access assigned. Please contact admin." });
@@ -737,6 +762,7 @@ const createAttendanceDownloadHandler =
             requestedCityId !== null &&
             !allowedIds.includes(Number(requestedCityId))
           ) {
+            console.error("403 ERROR 2: city mismatch", { requestedCityId, allowedIds });
             return res.status(403).json({
               error: "Forbidden: city not assigned to the current user.",
             });
@@ -767,15 +793,38 @@ const createAttendanceDownloadHandler =
 
         let allRows;
 
-        if (requestedGrouping === "detail") {
+        if (
+          requestedGrouping === "detail" ||
+          requestedGrouping === "simple"
+        ) {
           // Single unified query: start from employee and left-join attendance for the target date.
+          const startDate =
+            payload.start_date ||
+            payload.startDate ||
+            payload.date_from;
+
+          const endDate =
+            payload.end_date ||
+            payload.endDate ||
+            payload.date_to;
+
           const targetDate =
             payload.date ||
-            payload.start_date ||
-            payload.date_from ||
-            new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+            new Date().toLocaleDateString("en-CA", {
+              timeZone: "Asia/Kolkata",
+            });
 
-          const detailParams = [targetDate];
+          let detailParams = [];
+          let attendanceDateCondition = "";
+          if (startDate && endDate) {
+            detailParams = [startDate, endDate];
+            attendanceDateCondition =
+              "a.date BETWEEN $1::date AND $2::date";
+          } else {
+            detailParams = [targetDate];
+            attendanceDateCondition =
+              "a.date = $1::date";
+          }
           const filters = [];
           const hasPunchInFlag = parseBooleanFlag(payload.has_punch_in);
           const hasPunchOutFlag = parseBooleanFlag(payload.has_punch_out);
@@ -793,7 +842,7 @@ const createAttendanceDownloadHandler =
           // Kothi scope
           if (!kothiScope.all) {
             detailParams.push(kothiScope.ids);
-            filters.push(`w.ward_id = ANY($${detailParams.length}::int[])`);
+            filters.push(`w.kothi_id = ANY($${detailParams.length}::int[])`);
           }
 
           // Optional filters
@@ -802,16 +851,16 @@ const createAttendanceDownloadHandler =
             detailParams.push(zoneId);
             filters.push(`z.zone_id = $${detailParams.length}`);
           }
-          const wardId = parseIntegerParam(payload.ward_id || payload.kothi_id);
-          if (wardId !== null) {
-            detailParams.push(wardId);
-            filters.push(`w.ward_id = $${detailParams.length}`);
+          const kothiId = parseIntegerParam(payload.kothi_id || payload.kothi_id);
+          if (kothiId !== null) {
+            detailParams.push(kothiId);
+            filters.push(`w.kothi_id = $${detailParams.length}`);
           }
           const supervisorId = parseIntegerParam(payload.supervisor_id);
           if (supervisorId !== null) {
             detailParams.push(supervisorId);
             filters.push(
-              `EXISTS (SELECT 1 FROM supervisor_ward sw2 WHERE sw2.ward_id = w.ward_id AND sw2.supervisor_id = $${detailParams.length})`
+              `EXISTS (SELECT 1 FROM supervisor_ward sw2 WHERE sw2.kothi_id = w.kothi_id AND sw2.supervisor_id = $${detailParams.length})`
             );
           }
           const employeeId = parseIntegerParam(payload.employee_id);
@@ -824,15 +873,15 @@ const createAttendanceDownloadHandler =
             detailParams.push(empCode);
             filters.push(`e.emp_code = $${detailParams.length}`);
           }
-          const departmentId = parseIntegerParam(payload.department_id);
-          if (departmentId !== null) {
-            detailParams.push(departmentId);
-            filters.push(`dept.department_id = $${detailParams.length}`);
+          const departmentIds = (payload.department_id || payload.departmentId || "").toString().split(",").map(id => parseIntegerParam(id)).filter(id => id !== null);
+          if (departmentIds.length > 0) {
+            detailParams.push(departmentIds);
+            filters.push(`dept.department_id = ANY($${detailParams.length}::int[])`);
           }
-          const designationId = parseIntegerParam(payload.designation_id);
-          if (designationId !== null) {
-            detailParams.push(designationId);
-            filters.push(`des.designation_id = $${detailParams.length}`);
+          const designationIds = (payload.designation_id || payload.designationId || "").toString().split(",").map(id => parseIntegerParam(id)).filter(id => id !== null);
+          if (designationIds.length > 0) {
+            detailParams.push(designationIds);
+            filters.push(`des.designation_id = ANY($${detailParams.length}::int[])`);
           }
           if (absOnlyFlag === true) {
             filters.push("a.punch_in_time IS NULL");
@@ -856,17 +905,21 @@ const createAttendanceDownloadHandler =
 
           const unifiedQuery = `
             SELECT
-              ROW_NUMBER() OVER (ORDER BY a.attendance_id DESC NULLS LAST, e.name ASC) AS sr_no,
-              a.attendance_id,
+ROW_NUMBER() OVER (ORDER BY a.date DESC, a.attendance_id DESC, e.name ASC) AS sr_no,
+a.attendance_id,
               e.emp_id AS emp_id,
               e.name AS employee_name,
               e.emp_code,
+                 a.leave_type,
               e.phone AS contact_no,
-              TO_CHAR($1::date, 'DD-MM-YYYY') AS attendance_date,
-              TO_CHAR(a.punch_in_time, 'HH24:MI:SS') AS punch_in_time,
-              TO_CHAR(a.mid_shift_punch_in_time, 'HH24:MI:SS') AS mid_shift_punch_in_time,
-              TO_CHAR(a.punch_out_time, 'HH24:MI:SS') AS punch_out_time,
-              a.leave_type,
+a.date,
+TO_CHAR(a.date, 'DD-MM-YYYY') AS attendance_date,         
+ TO_CHAR(a.punch_in_time AT TIME ZONE 'Asia/Kolkata', 'HH24:MI:SS') AS punch_in_time,
+              TO_CHAR(a.mid_shift_punch_in_time AT TIME ZONE 'Asia/Kolkata', 'HH24:MI:SS') AS mid_shift_punch_in_time,
+              TO_CHAR(a.punch_out_time AT TIME ZONE 'Asia/Kolkata', 'HH24:MI:SS') AS punch_out_time,
+              a.punch_in_image,
+              a.mid_shift_punch_in_image,
+              a.punch_out_image,
               a.duration,
               a.in_address,
               a.latitude_in,
@@ -877,8 +930,8 @@ const createAttendanceDownloadHandler =
               a.mid_in_address,
               a.latitude_mid_in,
               a.longitude_mid_in,
-              w.ward_id,
-              w.ward_name,
+              w.kothi_id,
+              w.kothi_name,
               z.zone_id,
               z.zone_name,
               c.city_id,
@@ -891,54 +944,214 @@ const createAttendanceDownloadHandler =
               COALESCE(u2.name, 'Self') AS mid_shift_punched_in_by,
               COALESCE(u1.name, 'Self') AS punched_out_by
             FROM employee e
-            JOIN wards w ON e.ward_id = w.ward_id
+            JOIN kothis w ON e.kothi_id = w.kothi_id
             JOIN zones z ON w.zone_id = z.zone_id
             JOIN cities c ON z.city_id = c.city_id
             LEFT JOIN (
-              SELECT sw_agg.ward_id, STRING_AGG(su_agg.name, ', ' ORDER BY su_agg.name) AS supervisor_names
+              SELECT sw_agg.kothi_id, STRING_AGG(su_agg.name, ', ' ORDER BY su_agg.name) AS supervisor_names
               FROM supervisor_ward sw_agg
               JOIN users su_agg ON sw_agg.supervisor_id = su_agg.user_id
-              GROUP BY sw_agg.ward_id
-            ) supervisor_agg ON w.ward_id = supervisor_agg.ward_id
+              GROUP BY sw_agg.kothi_id
+            ) supervisor_agg ON w.kothi_id = supervisor_agg.kothi_id
             LEFT JOIN designation des ON e.designation_id = des.designation_id
             LEFT JOIN department dept ON des.department_id = dept.department_id
             -- Removed direct supervisor join to prevent row duplication.
             -- Using correlate subquery instead for supervisor_name.
-            LEFT JOIN LATERAL (
-              SELECT 
-                att.attendance_id, 
-                att.punch_in_time, 
-                att.mid_shift_punch_in_time,
-                att.punch_out_time, 
-                att.leave_type,
-                att.duration, 
-                att.in_address,
-                att.latitude_in,
-                att.longitude_in,
-                att.out_address,
-                att.latitude_out,
-                att.longitude_out,
-                att.mid_in_address,
-                att.latitude_mid_in,
-                att.longitude_mid_in,
-                att.punched_in_by,
-                att.mid_shift_punched_in_by,
-                att.punched_out_by
-              FROM attendance att
-              WHERE att.emp_id = e.emp_id 
-                AND (att.date = $1::date OR att.date = $1)
-              ORDER BY att.attendance_id DESC
-              LIMIT 1
-            ) a ON TRUE
+          LEFT JOIN attendance a
+  ON a.emp_id = e.emp_id
+ AND ${attendanceDateCondition}
             LEFT JOIN users u ON a.punched_in_by = u.user_id
             LEFT JOIN users u2 ON a.mid_shift_punched_in_by = u2.user_id
             LEFT JOIN users u1 ON a.punched_out_by = u1.user_id
             ${whereCombined}
             ORDER BY a.attendance_id DESC NULLS LAST, e.name ASC;
           `;
-
+          console.log("detailParams:", detailParams);
+          console.log("attendanceDateCondition:", attendanceDateCondition);
+          console.log("QUERY:", unifiedQuery);
           const unifiedResult = await pool.query(unifiedQuery, detailParams);
           allRows = unifiedResult.rows;
+          if (requestedGrouping === "simple") {
+
+            const employeeMap = new Map();
+
+            allRows.forEach((row) => {
+
+              const empId = row.emp_id;
+
+              if (!employeeMap.has(empId)) {
+
+                employeeMap.set(empId, {
+                  emp_id: row.emp_id,
+                  emp_code: row.emp_code,
+
+                  employee_name: row.employee_name,
+                  kothi_name: row.kothi_name,
+                  zone_name: row.zone_name,
+                  employee_type: row.designation_name,
+
+                  days: {},
+                  summary: {}
+                });
+              }
+
+              const emp = employeeMap.get(empId);
+
+              // const dateKey = new Date(row.date)
+              //   .toISOString()
+              //   .split("T")[0];
+              const dateKey = row.attendance_date;
+
+              let status = "A";
+
+              if (row.leave_type) {
+
+                status = row.leave_type;
+
+              } else if (
+                row.punch_in_time &&
+                row.punch_in_time !== "-"
+              ) {
+
+                status = "P";
+
+              }
+
+              emp.days[dateKey] = status;
+
+              emp.summary[status] =
+                (emp.summary[status] || 0) + 1;
+
+            });
+
+            // const allDates = [
+            //   ...new Set(
+            //     allRows.flatMap(r => Object.keys(r.days || {}))
+            //   )
+            // ].sort();
+
+
+
+            // groupConfig.csvHeaders = [
+            //   { key: "sr_no", label: "Sr No." },
+            //   { key: "emp_code", label: "Employee Code" },
+            //   { key: "employee_name", label: "Employee Name" },
+            //   { key: "kothi_name", label: "Kothi" },
+            //   { key: "zone_name", label: "Zone" },
+            //   { key: "employee_type", label: "Employee Type" },
+
+            //   ...allDates.map(date => ({
+            //     key: date,
+            //     label: date.slice(-2),
+            //     formatter: (_, row) => row.days?.[date] ?? "-"
+            //   })),
+
+            //   { key: "P", label: "P" },
+            //   { key: "A", label: "A" },
+            //   { key: "CL", label: "CL" },
+            //   { key: "EL", label: "EL" },
+            //   { key: "ML", label: "ML" },
+            //   { key: "WO", label: "WO" },
+            //   { key: "TOTAL", label: "TOTAL" }
+            // ];
+            // const allDates = [
+            //   ...new Set(
+            //     allRows.flatMap(r => Object.keys(r.days || {}))
+            //   )
+            // ].sort();
+
+            // groupConfig.csvHeaders = [
+            //   { key: "sr_no", label: "Sr No." },
+            //   { key: "emp_code", label: "Employee Code" },
+            //   { key: "employee_name", label: "Employee Name" },
+            //   { key: "kothi_name", label: "Kothi" },
+            //   { key: "zone_name", label: "Zone" },
+            //   { key: "employee_type", label: "Employee Type" },
+
+            //   ...allDates.map(date => ({
+            //     key: date,
+            //     label: date,
+            //     formatter: (_, row) => row.days?.[date] || "-"
+            //   }))
+            // ];
+            const allDates = [];
+
+            if (startDate && endDate) {
+              let current = new Date(startDate);
+              const last = new Date(endDate);
+
+              while (current <= last) {
+                const dd = String(current.getDate()).padStart(2, "0");
+                const mm = String(current.getMonth() + 1).padStart(2, "0");
+                const yyyy = current.getFullYear();
+
+                allDates.push(`${dd}-${mm}-${yyyy}`);
+
+                current.setDate(current.getDate() + 1);
+              }
+            } else {
+              const uniqueDates = [...new Set(allRows.map(r => r.attendance_date).filter(Boolean))].sort();
+              allDates.push(...uniqueDates);
+            }
+            allRows = Array.from(employeeMap.values()).map((row, index) => ({
+              sr_no: index + 1,
+              ...row,
+
+              P: row.summary?.P || 0,
+              A: row.summary?.A || 0,
+              CL: row.summary?.CL || 0,
+              EL: row.summary?.EL || 0,
+              ML: row.summary?.ML || 0,
+              WO: row.summary?.WO || 0,
+
+              TOTAL: allDates.length
+            }));
+            const leaveTypes = [
+              ...new Set(
+                allRows.flatMap(r => Object.keys(r.summary || {}))
+              )
+            ]
+              .filter(k => !["P", "A"].includes(k))
+              .sort();
+
+            groupConfig.csvHeaders = [
+              { key: "sr_no", label: "Sr No." },
+              { key: "emp_code", label: "Employee Code" },
+              { key: "employee_name", label: "Employee Name" },
+              { key: "kothi_name", label: "Kothi" },
+              { key: "zone_name", label: "Zone" },
+              { key: "employee_type", label: "Employee Type" },
+
+              ...allDates.map(date => ({
+                key: date,
+                label: date.split("-")[0], // only day: 05 06 07 ...
+                formatter: (_, row) => row.days?.[date] ?? "-"
+              })),
+
+              {
+                key: "P",
+                label: "P",
+                formatter: (_, row) => row.summary?.P || 0
+              },
+              {
+                key: "A",
+                label: "A",
+                formatter: (_, row) => row.summary?.A || 0
+              },
+
+              ...leaveTypes.map(type => ({
+                key: type,
+                label: type,
+                formatter: (_, row) => row.summary?.[type] || 0
+              })),
+
+              {
+                key: "TOTAL",
+                label: "TOTAL",
+                formatter: () => allDates.length
+              }
+            ];
+          }
         } else {
           const selectClause =
             typeof groupConfig.select === "function"
@@ -963,18 +1176,18 @@ const createAttendanceDownloadHandler =
           const defaultFromClause = `
         FROM attendance a
         JOIN employee e ON a.emp_id = e.emp_id
-        JOIN wards w ON a.ward_id = w.ward_id
+        JOIN kothis w ON a.kothi_id = w.kothi_id
         JOIN zones z ON w.zone_id = z.zone_id
         JOIN cities c ON z.city_id = c.city_id
       `;
 
           const defaultJoinClause = `
         LEFT JOIN (
-          SELECT sw_agg.ward_id, STRING_AGG(su_agg.name, ', ' ORDER BY su_agg.name) AS supervisor_names
+          SELECT sw_agg.kothi_id, STRING_AGG(su_agg.name, ', ' ORDER BY su_agg.name) AS supervisor_names
           FROM supervisor_ward sw_agg
           JOIN users su_agg ON sw_agg.supervisor_id = su_agg.user_id
-          GROUP BY sw_agg.ward_id
-        ) supervisor_agg ON w.ward_id = supervisor_agg.ward_id
+          GROUP BY sw_agg.kothi_id
+        ) supervisor_agg ON w.kothi_id = supervisor_agg.kothi_id
         LEFT JOIN users u ON a.punched_in_by = u.user_id
         LEFT JOIN users u2 ON a.mid_shift_punched_in_by = u2.user_id
         LEFT JOIN users u1 ON a.punched_out_by = u1.user_id
@@ -1016,6 +1229,7 @@ const createAttendanceDownloadHandler =
         if (allRows && allRows.length) {
           allRows.forEach((row, idx) => {
             row.sr_no = idx + 1;
+            if (idx < 5) console.log(`DEBUG: Row ${idx + 1} punch_in_image:`, row.punch_in_image);
           });
         }
 
@@ -1029,16 +1243,17 @@ const createAttendanceDownloadHandler =
           });
         }
 
+        const baseUrl = process.env.API_BASE_URL || (req.protocol + '://' + req.get('host') + '/api');
         const headers =
           typeof groupConfig.csvHeaders === "function"
-            ? groupConfig.csvHeaders({ locationExpression })
+            ? groupConfig.csvHeaders({ locationExpression, baseUrl })
             : groupConfig.csvHeaders;
 
         let summaryRowData = null;
         if (requestedGrouping === "detail" && allRows.length > 0) {
           const totalRecords = allRows.length;
           const presentCount = allRows.filter(r => r.punch_in_time && r.punch_in_time !== '-').length;
-          
+
           summaryRowData = {};
           headers.forEach(h => {
             if (h.key === "sr_no") summaryRowData[h.key] = "TOTAL";

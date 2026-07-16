@@ -36,11 +36,11 @@ async function validateGeofencing(empId, latitude, longitude) {
     const locationMissing = !latitude || !longitude || isNaN(lat) || isNaN(lon) || (lat === 0 && lon === 0);
 
     try {
-        // 1. Get employee's ward and zone (JOIN with wards to get zone_id)
+        // 1. Get employee's kothi and zone (JOIN with kothis to get zone_id)
         const empResult = await pool.query(
-            `SELECT e.ward_id, w.zone_id 
+            `SELECT e.kothi_id, w.zone_id 
              FROM employee e
-             LEFT JOIN wards w ON e.ward_id = w.ward_id
+             LEFT JOIN kothis w ON e.kothi_id = w.kothi_id
              WHERE e.emp_id = $1`,
             [empId]
         );
@@ -48,29 +48,29 @@ async function validateGeofencing(empId, latitude, longitude) {
         if (empResult.rows.length === 0) return { allowed: true };
 
 
-        const { ward_id, zone_id } = empResult.rows[0];
+        const { kothi_id, zone_id } = empResult.rows[0];
 
-        // 2. Fetch geofencing rules for this ward (specific) or zone (fallback)
-        // We prioritize ward-level geofencing
+        // 2. Fetch geofencing rules for this kothi (specific) or zone (fallback)
+        // We prioritize kothi-level geofencing
         let rulesResult = await pool.query(
-            "SELECT latitude, longitude, radius, unit FROM geofencing WHERE ward_id = $1",
-            [ward_id]
+            "SELECT latitude, longitude, radius, unit FROM geofencing WHERE kothi_id = $1",
+            [kothi_id]
         );
 
-        // If no ward rules, check zone rules
+        // If no kothi rules, check zone rules
         if (rulesResult.rows.length === 0 && zone_id) {
             rulesResult = await pool.query(
-                "SELECT latitude, longitude, radius, unit FROM geofencing WHERE zone_id = $1 AND ward_id IS NULL",
+                "SELECT latitude, longitude, radius, unit FROM geofencing WHERE zone_id = $1 AND kothi_id IS NULL",
                 [zone_id]
             );
         }
 
-        // 3. If no rules are defined → ALLOW (Geofencing is optional/not yet mandatory for this ward)
+        // 3. If no rules are defined → ALLOW (Geofencing is optional/not yet mandatory for this kothi)
         if (rulesResult.rows.length === 0) {
             return {
                 allowed: true,
                 notConfigured: true,
-                message: "Geofencing not configured for this ward (Auto-allowed)"
+                message: "Geofencing not configured for this kothi (Auto-allowed)"
             };
         }
 

@@ -1,7 +1,7 @@
 const { fetchUserKothiAccess } = require("../utils/userKothiAccess");
 
 /**
- * Middleware to attach Kothi (Ward) access scope to the request.
+ * Middleware to attach Kothi (Kothi) access scope to the request.
  * req.kothiScope = { all: boolean, ids: number[] }
  */
 const attachKothiScope = async (req, res, next) => {
@@ -34,9 +34,9 @@ const attachKothiScope = async (req, res, next) => {
 };
 
 /**
- * Builds a WHERE clause segment for filtering by ward_id (Kothi).
+ * Builds a WHERE clause segment for filtering by kothi_id (Kothi).
  * @param {object} scope - req.kothiScope
- * @param {string} alias - table alias for wards (e.g., 'w')
+ * @param {string} alias - table alias for kothis (e.g., 'w')
  * @param {array} params - query parameters array
  */
 const buildKothiFilterClause = (scope, alias, params) => {
@@ -53,7 +53,7 @@ const buildKothiFilterClause = (scope, alias, params) => {
   const clausePrefix = params.length > 0 ? "AND" : "WHERE";
   
   return {
-    clause: `${clausePrefix} ${alias}.ward_id = ANY(${placeholder})`,
+    clause: `${clausePrefix} ${alias}.kothi_id = ANY(${placeholder})`,
     params: nextParams,
   };
 };

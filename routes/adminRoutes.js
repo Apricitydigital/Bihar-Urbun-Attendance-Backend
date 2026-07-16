@@ -78,19 +78,19 @@ const fetchTransferKeyMatch = async (transferKey, keyName = null) => {
 const getTransferDestination = async (destinationWardId) => {
   const { rows } = await pool.query(
     `SELECT
-      w.ward_id,
-      w.ward_name,
-      s.sector_id,
-      s.sector_name,
+      w.kothi_id,
+      w.kothi_name,
+      s.ward_id,
+      s.ward_name,
       z.zone_id,
       z.zone_name,
       c.city_id,
       c.city_name
-    FROM wards w
-    LEFT JOIN sectors s ON s.sector_id = w.sector_id
+    FROM kothis w
+    LEFT JOIN wards s ON s.ward_id = w.ward_id
     JOIN zones z ON z.zone_id = w.zone_id
     JOIN cities c ON c.city_id = z.city_id
-    WHERE w.ward_id = $1`,
+    WHERE w.kothi_id = $1`,
     [destinationWardId]
   );
 
@@ -119,19 +119,19 @@ router.get("/migration/context", async (req, res) => {
            ORDER BY c.city_name ASC, z.zone_name ASC`
         ),
         pool.query(
-          `SELECT s.sector_id, s.sector_name, s.zone_id, z.zone_name, z.city_id, c.city_name
-           FROM sectors s
+          `SELECT s.ward_id, s.ward_name, s.zone_id, z.zone_name, z.city_id, c.city_name
+           FROM wards s
            JOIN zones z ON z.zone_id = s.zone_id
            JOIN cities c ON c.city_id = z.city_id
-           ORDER BY c.city_name ASC, z.zone_name ASC, s.sector_name ASC`
+           ORDER BY c.city_name ASC, z.zone_name ASC, s.ward_name ASC`
         ),
         pool.query(
-          `SELECT w.ward_id, w.ward_name, w.sector_id, s.sector_name, w.zone_id, z.zone_name, z.city_id, c.city_name
-           FROM wards w
-           LEFT JOIN sectors s ON s.sector_id = w.sector_id
+          `SELECT w.kothi_id, w.kothi_name, w.ward_id, s.ward_name, w.zone_id, z.zone_name, z.city_id, c.city_name
+           FROM kothis w
+           LEFT JOIN wards s ON s.ward_id = w.ward_id
            JOIN zones z ON z.zone_id = w.zone_id
            JOIN cities c ON c.city_id = z.city_id
-           ORDER BY c.city_name ASC, z.zone_name ASC, s.sector_name ASC NULLS LAST, w.ward_name ASC`
+           ORDER BY c.city_name ASC, z.zone_name ASC, s.ward_name ASC NULLS LAST, w.kothi_name ASC`
         ),
         pool.query(
           `SELECT
@@ -141,22 +141,22 @@ router.get("/migration/context", async (req, res) => {
             COALESCE(
               json_agg(
                 json_build_object(
-                  'ward_id', w.ward_id,
-                  'ward_name', w.ward_name,
-                  'sector_id', s.sector_id,
-                  'sector_name', s.sector_name,
+                  'kothi_id', w.kothi_id,
+                  'kothi_name', w.kothi_name,
+                  'ward_id', s.ward_id,
+                  'ward_name', s.ward_name,
                   'zone_id', z.zone_id,
                   'zone_name', z.zone_name,
                   'city_id', c.city_id,
                   'city_name', c.city_name
                 )
-              ) FILTER (WHERE w.ward_id IS NOT NULL),
+              ) FILTER (WHERE w.kothi_id IS NOT NULL),
               '[]'::json
             ) AS assignments
            FROM users u
            LEFT JOIN supervisor_ward sw ON sw.supervisor_id = u.user_id
-           LEFT JOIN wards w ON w.ward_id = sw.ward_id
-           LEFT JOIN sectors s ON s.sector_id = w.sector_id
+           LEFT JOIN kothis w ON w.kothi_id = sw.kothi_id
+           LEFT JOIN wards s ON s.ward_id = w.ward_id
            LEFT JOIN zones z ON z.zone_id = w.zone_id
            LEFT JOIN cities c ON c.city_id = z.city_id
            WHERE u.role = 'supervisor'
@@ -168,7 +168,7 @@ router.get("/migration/context", async (req, res) => {
     res.json({
       cities: citiesResult.rows,
       zones: zonesResult.rows,
-      sectors: sectorsResult.rows,
+      wards: sectorsResult.rows,
       kothis: kothisResult.rows,
       supervisors: supervisorsResult.rows,
     });
@@ -405,17 +405,17 @@ router.post("/migration/transfer", async (req, res) => {
           e.emp_id,
           e.emp_code,
           e.name AS employee_name,
-          e.ward_id AS from_kothi_id,
-          w.ward_name AS from_kothi_name,
-          s.sector_id AS from_sector_id,
-          s.sector_name AS from_sector_name,
+          e.kothi_id AS from_kothi_id,
+          w.kothi_name AS from_kothi_name,
+          s.ward_id AS from_sector_id,
+          s.ward_name AS from_sector_name,
           z.zone_id AS from_zone_id,
           z.zone_name AS from_zone_name,
           c.city_id AS from_city_id,
           c.city_name AS from_city_name
         FROM employee e
-        LEFT JOIN wards w ON w.ward_id = e.ward_id
-        LEFT JOIN sectors s ON s.sector_id = w.sector_id
+        LEFT JOIN kothis w ON w.kothi_id = e.kothi_id
+        LEFT JOIN wards s ON s.ward_id = w.ward_id
         LEFT JOIN zones z ON z.zone_id = w.zone_id
         LEFT JOIN cities c ON c.city_id = z.city_id
         WHERE e.emp_id = ANY($1::int[])`,
@@ -434,17 +434,17 @@ router.post("/migration/transfer", async (req, res) => {
 
       const supervisorAssignmentResult = await client.query(
         `SELECT
-          sw.ward_id,
-          w.ward_name,
-          s.sector_id,
-          s.sector_name,
+          sw.kothi_id,
+          w.kothi_name,
+          s.ward_id,
+          s.ward_name,
           z.zone_id,
           z.zone_name,
           c.city_id,
           c.city_name
         FROM supervisor_ward sw
-        LEFT JOIN wards w ON w.ward_id = sw.ward_id
-        LEFT JOIN sectors s ON s.sector_id = w.sector_id
+        LEFT JOIN kothis w ON w.kothi_id = sw.kothi_id
+        LEFT JOIN wards s ON s.ward_id = w.ward_id
         LEFT JOIN zones z ON z.zone_id = w.zone_id
         LEFT JOIN cities c ON c.city_id = z.city_id
         WHERE sw.supervisor_id = $1`,
@@ -457,18 +457,18 @@ router.post("/migration/transfer", async (req, res) => {
           e.emp_id,
           e.emp_code,
           e.name AS employee_name,
-          e.ward_id AS from_kothi_id,
-          w.ward_name AS from_kothi_name,
-          s.sector_id AS from_sector_id,
-          s.sector_name AS from_sector_name,
+          e.kothi_id AS from_kothi_id,
+          w.kothi_name AS from_kothi_name,
+          s.ward_id AS from_sector_id,
+          s.ward_name AS from_sector_name,
           z.zone_id AS from_zone_id,
           z.zone_name AS from_zone_name,
           c.city_id AS from_city_id,
           c.city_name AS from_city_name
         FROM supervisor_ward sw
-        JOIN employee e ON e.ward_id = sw.ward_id
-        LEFT JOIN wards w ON w.ward_id = e.ward_id
-        LEFT JOIN sectors s ON s.sector_id = w.sector_id
+        JOIN employee e ON e.kothi_id = sw.kothi_id
+        LEFT JOIN kothis w ON w.kothi_id = e.kothi_id
+        LEFT JOIN wards s ON s.ward_id = w.ward_id
         LEFT JOIN zones z ON z.zone_id = w.zone_id
         LEFT JOIN cities c ON c.city_id = z.city_id
         WHERE sw.supervisor_id = $1`,
@@ -483,7 +483,7 @@ router.post("/migration/transfer", async (req, res) => {
         supervisorTransferMode === "supervisor_only") &&
       parseInteger(destinationWardId) !== null
     ) {
-      // For supervisor movement, shift assignment from existing wards to destination ward.
+      // For supervisor movement, shift assignment from existing kothis to destination kothi.
       // Keep only one explicit destination assignment to make "one place to another" predictable.
       await client.query("BEGIN");
       transactionStarted = true;
@@ -494,7 +494,7 @@ router.post("/migration/transfer", async (req, res) => {
         [supervisorId]
       );
       await client.query(
-        `INSERT INTO supervisor_ward (supervisor_id, ward_id)
+        `INSERT INTO supervisor_ward (supervisor_id, kothi_id)
          VALUES ($1, $2)
          ON CONFLICT DO NOTHING`,
         [supervisorId, destinationWardId]
@@ -504,7 +504,7 @@ router.post("/migration/transfer", async (req, res) => {
         supervisorId,
       ]);
       await client.query(
-        `INSERT INTO supervisor_kothi (supervisor_id, ward_id)
+        `INSERT INTO supervisor_kothi (supervisor_id, kothi_id)
          VALUES ($1, $2)
          ON CONFLICT DO NOTHING`,
         [supervisorId, destinationWardId]
@@ -537,17 +537,17 @@ router.post("/migration/transfer", async (req, res) => {
           from_city_name VARCHAR(255),
           from_zone_id INTEGER REFERENCES zones(zone_id) ON DELETE SET NULL,
           from_zone_name VARCHAR(255),
-          from_sector_id INTEGER REFERENCES sectors(sector_id) ON DELETE SET NULL,
+          from_sector_id INTEGER REFERENCES wards(ward_id) ON DELETE SET NULL,
           from_sector_name VARCHAR(255),
-          from_kothi_id INTEGER REFERENCES wards(ward_id) ON DELETE SET NULL,
+          from_kothi_id INTEGER REFERENCES kothis(kothi_id) ON DELETE SET NULL,
           from_kothi_name VARCHAR(255),
           to_city_id INTEGER REFERENCES cities(city_id) ON DELETE SET NULL,
           to_city_name VARCHAR(255),
           to_zone_id INTEGER REFERENCES zones(zone_id) ON DELETE SET NULL,
           to_zone_name VARCHAR(255),
-          to_sector_id INTEGER REFERENCES sectors(sector_id) ON DELETE SET NULL,
+          to_sector_id INTEGER REFERENCES wards(ward_id) ON DELETE SET NULL,
           to_sector_name VARCHAR(255),
-          to_kothi_id INTEGER REFERENCES wards(ward_id) ON DELETE SET NULL,
+          to_kothi_id INTEGER REFERENCES kothis(kothi_id) ON DELETE SET NULL,
           to_kothi_name VARCHAR(255),
           transfer_mode VARCHAR(40) NOT NULL,
           transfer_batch_id UUID NOT NULL,
@@ -583,18 +583,18 @@ router.post("/migration/transfer", async (req, res) => {
             (supervisorAssignments.length > 1 ? "Multiple Assignments" : null),
           fromLocation?.zone_id || null,
           fromLocation?.zone_name || null,
-          fromLocation?.sector_id || null,
-          fromLocation?.sector_name || null,
           fromLocation?.ward_id || null,
           fromLocation?.ward_name || null,
+          fromLocation?.kothi_id || null,
+          fromLocation?.kothi_name || null,
           destination.city_id,
           destination.city_name,
           destination.zone_id,
           destination.zone_name,
-          destination.sector_id || null,
-          destination.sector_name || null,
-          destination.ward_id,
-          destination.ward_name,
+          destination.ward_id || null,
+          destination.ward_name || null,
+          destination.kothi_id,
+          destination.kothi_name,
           supervisorTransferMode,
           transferBatchId,
           verifiedKey.key_name,
@@ -664,7 +664,7 @@ router.post("/migration/transfer", async (req, res) => {
 
     await client.query(
       `UPDATE employee
-       SET ward_id = $1
+       SET kothi_id = $1
        WHERE emp_id = ANY($2::int[])`,
       [destinationWardId, transferEmpIds]
     );
@@ -698,10 +698,10 @@ router.post("/migration/transfer", async (req, res) => {
           destination.city_name,
           destination.zone_id,
           destination.zone_name,
-          destination.sector_id || null,
-          destination.sector_name || null,
-          destination.ward_id,
-          destination.ward_name,
+          destination.ward_id || null,
+          destination.ward_name || null,
+          destination.kothi_id,
+          destination.kothi_name,
           mode === "supervisor_selection" && supervisorTransferMode === "with_supervisor"
             ? "supervisor_selection_with_supervisor"
             : mode,
@@ -826,13 +826,13 @@ router.get("/analytics/weekly-trend", async (req, res) => {
   }
 });
 
-// Get attendance trends by ward
-router.get("/analytics/ward-trends", async (req, res) => {
+// Get attendance trends by kothi
+router.get("/analytics/kothi-trends", async (req, res) => {
   try {
     const trends = await pool.query(`
       SELECT 
-        w.ward_id,
-        w.ward_name,
+        w.kothi_id,
+        w.kothi_name,
         z.zone_name,
         COUNT(DISTINCT e.emp_id) as total_employees,
         COUNT(DISTINCT a.emp_id) as employees_with_attendance,
@@ -841,20 +841,20 @@ router.get("/analytics/ward-trends", async (req, res) => {
            NULLIF(COUNT(DISTINCT a.emp_id), 0)), 2
         ) as attendance_rate,
         u.name as supervisor_name
-      FROM wards w
+      FROM kothis w
       LEFT JOIN zones z ON w.zone_id = z.zone_id
-      LEFT JOIN employee e ON w.ward_id = e.ward_id AND (e.face_id IS NOT NULL OR e.face_embedding IS NOT NULL)
+      LEFT JOIN employee e ON w.kothi_id = e.kothi_id AND (e.face_id IS NOT NULL OR e.face_embedding IS NOT NULL)
       LEFT JOIN attendance a ON e.emp_id = a.emp_id
         AND a.created_at >= CURRENT_DATE - INTERVAL '30 days'
-      LEFT JOIN supervisor_ward aw ON w.ward_id = aw.ward_id
+      LEFT JOIN supervisor_ward aw ON w.kothi_id = aw.kothi_id
       LEFT JOIN users u ON aw.supervisor_id = u.user_id
-      GROUP BY w.ward_id, w.ward_name, z.zone_name, u.name
+      GROUP BY w.kothi_id, w.kothi_name, z.zone_name, u.name
       ORDER BY attendance_rate DESC NULLS LAST
     `);
 
     res.json(trends.rows);
   } catch (error) {
-    console.error("Ward trends error:", error);
+    console.error("Kothi trends error:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -872,17 +872,17 @@ router.get("/supervisors", async (req, res) => {
         u.emp_code,
         u.phone,
         u.created_at,
-        COUNT(DISTINCT sw.ward_id) as assigned_wards,
+        COUNT(DISTINCT sw.kothi_id) as assigned_wards,
         COUNT(DISTINCT e.emp_id) as total_employees,
-        STRING_AGG(DISTINCT w.ward_name, ', ') as ward_names,
+        STRING_AGG(DISTINCT w.kothi_name, ', ') as ward_names,
         CASE
-          WHEN COUNT(DISTINCT sw.ward_id) > 0 THEN 'active'
+          WHEN COUNT(DISTINCT sw.kothi_id) > 0 THEN 'active'
           ELSE 'inactive'
         END as status
       FROM users u
       LEFT JOIN supervisor_ward sw ON u.user_id = sw.supervisor_id
-      LEFT JOIN wards w ON sw.ward_id = w.ward_id
-      LEFT JOIN employee e ON w.ward_id = e.ward_id AND (e.face_id IS NOT NULL OR e.face_embedding IS NOT NULL)
+      LEFT JOIN kothis w ON sw.kothi_id = w.kothi_id
+      LEFT JOIN employee e ON w.kothi_id = e.kothi_id AND (e.face_id IS NOT NULL OR e.face_embedding IS NOT NULL)
       WHERE u.role = 'supervisor'
       GROUP BY u.user_id, u.name, u.email, u.emp_code, u.phone, u.created_at
       ORDER BY u.name
@@ -912,16 +912,16 @@ router.get("/supervisors/:id", async (req, res) => {
 
     const assignments = await pool.query(`
       SELECT 
-        w.ward_id,
-        w.ward_name,
+        w.kothi_id,
+        w.kothi_name,
         z.zone_name,
         COUNT(e.emp_id) as employee_count
       FROM supervisor_ward aw
-      JOIN wards w ON aw.ward_id = w.ward_id
+      JOIN kothis w ON aw.kothi_id = w.kothi_id
       LEFT JOIN zones z ON w.zone_id = z.zone_id
-      LEFT JOIN employee e ON w.ward_id = e.ward_id AND (e.face_id IS NOT NULL OR e.face_embedding IS NOT NULL)
+      LEFT JOIN employee e ON w.kothi_id = e.kothi_id AND (e.face_id IS NOT NULL OR e.face_embedding IS NOT NULL)
       WHERE aw.supervisor_id = $1
-      GROUP BY w.ward_id, w.ward_name, z.zone_name
+      GROUP BY w.kothi_id, w.kothi_name, z.zone_name
     `, [id]);
 
     const recentActivity = await pool.query(`
@@ -931,7 +931,7 @@ router.get("/supervisors/:id", async (req, res) => {
         COUNT(DISTINCT CASE WHEN a.punch_in_time IS NOT NULL THEN a.emp_id END) as present_count
       FROM attendance a
       JOIN employee e ON a.emp_id = e.emp_id AND (e.face_id IS NOT NULL OR e.face_embedding IS NOT NULL)
-      JOIN supervisor_ward aw ON e.ward_id = aw.ward_id
+      JOIN supervisor_ward aw ON e.kothi_id = aw.kothi_id
       WHERE aw.supervisor_id = $1 
         AND a.created_at >= CURRENT_DATE - INTERVAL '7 days'
       GROUP BY DATE(a.created_at)
@@ -949,7 +949,7 @@ router.get("/supervisors/:id", async (req, res) => {
   }
 });
 
-// Update supervisor ward assignments
+// Update supervisor kothi assignments
 router.put("/supervisors/:id/assignments", async (req, res) => {
   const client = await pool.connect();
   try {
@@ -964,11 +964,11 @@ router.put("/supervisors/:id/assignments", async (req, res) => {
 
     // Add new assignments
     if (wardIds && wardIds.length > 0) {
-      const values = wardIds.map((wardId, index) => `($1, $${index + 2})`).join(', ');
+      const values = wardIds.map((kothiId, index) => `($1, $${index + 2})`).join(', ');
       const params = [id, ...wardIds];
 
       const insertResult = await client.query(
-        `INSERT INTO supervisor_ward (supervisor_id, ward_id) VALUES ${values} ON CONFLICT DO NOTHING`,
+        `INSERT INTO supervisor_ward (supervisor_id, kothi_id) VALUES ${values} ON CONFLICT DO NOTHING`,
         params
       );
 
@@ -979,7 +979,7 @@ router.put("/supervisors/:id/assignments", async (req, res) => {
 
     await client.query('COMMIT');
     invalidateKothiAccessCache();
-    res.json({ message: "Ward assignments updated successfully" });
+    res.json({ message: "Kothi assignments updated successfully" });
   } catch (error) {
     if (client) await client.query('ROLLBACK');
     console.error("Update assignments error:", error);
@@ -994,7 +994,7 @@ router.put("/supervisors/:id/assignments", async (req, res) => {
 // Get all employees across all supervisors
 router.get("/employees", async (req, res) => {
   try {
-    const { page = 1, limit = 50, search = '', ward_id = '', status = '' } = req.query;
+    const { page = 1, limit = 50, search = '', kothi_id = '', status = '' } = req.query;
     const offset = (page - 1) * limit;
 
     let whereClause = 'WHERE (e.face_id IS NOT NULL OR e.face_embedding IS NOT NULL)';
@@ -1007,10 +1007,10 @@ router.get("/employees", async (req, res) => {
       params.push(`%${search}%`);
     }
 
-    if (ward_id) {
+    if (kothi_id) {
       paramCount++;
-      whereClause += ` AND e.ward_id = $${paramCount}`;
-      params.push(ward_id);
+      whereClause += ` AND e.kothi_id = $${paramCount}`;
+      params.push(kothi_id);
     }
 
     const employees = await pool.query(`
@@ -1020,7 +1020,7 @@ router.get("/employees", async (req, res) => {
         e.emp_code,
         e.phone,
         d.designation_name as position,
-        w.ward_name,
+        w.kothi_name,
         z.zone_name,
         u.name as supervisor_name,
         CASE
@@ -1033,10 +1033,10 @@ router.get("/employees", async (req, res) => {
           NULLIF((SELECT COUNT(*) FROM attendance a3 WHERE a3.emp_id = e.emp_id AND a3.date >= CURRENT_DATE - INTERVAL '30 days'), 0), 0
         ) as attendance_rate
       FROM employee e
-      LEFT JOIN wards w ON e.ward_id = w.ward_id
+      LEFT JOIN kothis w ON e.kothi_id = w.kothi_id
       LEFT JOIN zones z ON w.zone_id = z.zone_id
       LEFT JOIN designation d ON e.designation_id = d.designation_id
-      LEFT JOIN supervisor_ward sw ON w.ward_id = sw.ward_id
+      LEFT JOIN supervisor_ward sw ON w.kothi_id = sw.kothi_id
       LEFT JOIN users u ON sw.supervisor_id = u.user_id
       LEFT JOIN attendance a ON e.emp_id = a.emp_id
         AND a.date = CURRENT_DATE
@@ -1048,7 +1048,7 @@ router.get("/employees", async (req, res) => {
     const totalCount = await pool.query(`
       SELECT COUNT(*) as total
       FROM employee e
-      LEFT JOIN wards w ON e.ward_id = w.ward_id
+      LEFT JOIN kothis w ON e.kothi_id = w.kothi_id
       ${whereClause}
     `, params);
 
@@ -1078,7 +1078,7 @@ router.get("/attendance", async (req, res) => {
       date_from = '',
       date_to = '',
       supervisor_id = '',
-      ward_id = '',
+      kothi_id = '',
       status = ''
     } = req.query;
 
@@ -1105,10 +1105,10 @@ router.get("/attendance", async (req, res) => {
       params.push(supervisor_id);
     }
 
-    if (ward_id) {
+    if (kothi_id) {
       paramCount++;
-      whereClause += ` AND e.ward_id = $${paramCount}`;
-      params.push(ward_id);
+      whereClause += ` AND e.kothi_id = $${paramCount}`;
+      params.push(kothi_id);
     }
 
     if (status) {
@@ -1127,14 +1127,14 @@ router.get("/attendance", async (req, res) => {
         a.created_at,
         a.location_lat,
         a.location_lng,
-        w.ward_name,
+        w.kothi_name,
         z.zone_name,
         u.name as supervisor_name
       FROM attendance a
       JOIN employee e ON a.emp_id = e.emp_id
-      LEFT JOIN wards w ON e.ward_id = w.ward_id
+      LEFT JOIN kothis w ON e.kothi_id = w.kothi_id
       LEFT JOIN zones z ON w.zone_id = z.zone_id
-      LEFT JOIN supervisor_ward aw ON w.ward_id = aw.ward_id
+      LEFT JOIN supervisor_ward aw ON w.kothi_id = aw.kothi_id
       LEFT JOIN users u ON aw.supervisor_id = u.user_id
       ${whereClause}
       ORDER BY a.created_at DESC
@@ -1145,8 +1145,8 @@ router.get("/attendance", async (req, res) => {
       SELECT COUNT(*) as total
       FROM attendance a
       JOIN employee e ON a.emp_id = e.emp_id
-      LEFT JOIN wards w ON e.ward_id = w.ward_id
-      LEFT JOIN supervisor_ward aw ON w.ward_id = aw.ward_id
+      LEFT JOIN kothis w ON e.kothi_id = w.kothi_id
+      LEFT JOIN supervisor_ward aw ON w.kothi_id = aw.kothi_id
       ${whereClause}
     `, params);
 
@@ -1167,30 +1167,30 @@ router.get("/attendance", async (req, res) => {
 
 // ===== SYSTEM MANAGEMENT =====
 
-// Get all wards for assignment
-router.get("/wards", async (req, res) => {
+// Get all kothis for assignment
+router.get("/kothis", async (req, res) => {
   try {
-    const wards = await pool.query(`
+    const kothis = await pool.query(`
       SELECT
-        w.ward_id,
-        w.ward_name,
+        w.kothi_id,
+        w.kothi_name,
         z.zone_name,
         c.city_name,
         COUNT(e.emp_id) as employee_count,
         u.name as assigned_supervisor
-      FROM wards w
+      FROM kothis w
       LEFT JOIN zones z ON w.zone_id = z.zone_id
       LEFT JOIN cities c ON z.city_id = c.city_id
-      LEFT JOIN employee e ON w.ward_id = e.ward_id AND (e.face_id IS NOT NULL OR e.face_embedding IS NOT NULL)
-      LEFT JOIN supervisor_ward aw ON w.ward_id = aw.ward_id
+      LEFT JOIN employee e ON w.kothi_id = e.kothi_id AND (e.face_id IS NOT NULL OR e.face_embedding IS NOT NULL)
+      LEFT JOIN supervisor_ward aw ON w.kothi_id = aw.kothi_id
       LEFT JOIN users u ON aw.supervisor_id = u.user_id
-      GROUP BY w.ward_id, w.ward_name, z.zone_name, c.city_name, u.name
-      ORDER BY c.city_name, z.zone_name, w.ward_name
+      GROUP BY w.kothi_id, w.kothi_name, z.zone_name, c.city_name, u.name
+      ORDER BY c.city_name, z.zone_name, w.kothi_name
     `);
 
-    res.json(wards.rows);
+    res.json(kothis.rows);
   } catch (error) {
-    console.error("Get wards error:", error);
+    console.error("Get kothis error:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1209,11 +1209,11 @@ router.get("/activity-logs", async (req, res) => {
         e.name as employee_name,
         u.name as supervisor_name,
         a.status,
-        w.ward_name
+        w.kothi_name
       FROM attendance a
       JOIN employee e ON a.emp_id = e.emp_id
-      LEFT JOIN wards w ON e.ward_id = w.ward_id
-      LEFT JOIN supervisor_ward aw ON w.ward_id = aw.ward_id
+      LEFT JOIN kothis w ON e.kothi_id = w.kothi_id
+      LEFT JOIN supervisor_ward aw ON w.kothi_id = aw.kothi_id
       LEFT JOIN users u ON aw.supervisor_id = u.user_id
       WHERE a.created_at >= CURRENT_DATE - INTERVAL '7 days'
       ORDER BY a.created_at DESC
@@ -1372,14 +1372,14 @@ router.get("/feedback/responses", async (req, res) => {
         (
           SELECT STRING_AGG(DISTINCT z.zone_name, ', ')
           FROM supervisor_ward sw
-          JOIN wards w ON sw.ward_id = w.ward_id
+          JOIN kothis w ON sw.kothi_id = w.kothi_id
           JOIN zones z ON w.zone_id = z.zone_id
           WHERE sw.supervisor_id = fr.user_id
         ) as zone_name,
         (
-          SELECT STRING_AGG(DISTINCT w.ward_name, ', ')
+          SELECT STRING_AGG(DISTINCT w.kothi_name, ', ')
           FROM supervisor_ward sw
-          JOIN wards w ON sw.ward_id = w.ward_id
+          JOIN kothis w ON sw.kothi_id = w.kothi_id
           WHERE sw.supervisor_id = fr.user_id
         ) as ward_names
       FROM feedback_responses fr

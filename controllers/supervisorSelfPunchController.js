@@ -34,33 +34,33 @@ const ensureProfessionalPasswordColumn = async (client) => {
 
 // Helper to generate hierarchy visibility CTE for a reviewer user.
 // Supports visibility from:
-// - direct ward/kothi assignments
-// - zone assignments (all wards/sectors in zone)
-// - city assignments (all zones/wards in city)
-// - legacy rows where spr.ward_id stores sector_id
+// - direct kothi/kothi assignments
+// - zone assignments (all kothis/wards in zone)
+// - city assignments (all zones/kothis in city)
+// - legacy rows where spr.kothi_id stores ward_id
 const getVisibilityCTE = () => `
   WITH assigned_wards AS (
-    SELECT ward_id FROM supervisor_ward WHERE supervisor_id = $1
+    SELECT kothi_id FROM supervisor_ward WHERE supervisor_id = $1
     UNION
-    SELECT ward_id FROM supervisor_kothi WHERE supervisor_id = $1
+    SELECT kothi_id FROM supervisor_kothi WHERE supervisor_id = $1
     UNION
-    SELECT ward_id FROM user_kothi_access WHERE user_id = $1
+    SELECT kothi_id FROM user_kothi_access WHERE user_id = $1
   ),
   assigned_sectors AS (
-    -- From direct ward assignments -> sectors
-    SELECT DISTINCT w.sector_id
-    FROM wards w
-    JOIN assigned_wards a ON a.ward_id = w.ward_id
-    WHERE w.sector_id IS NOT NULL
+    -- From direct kothi assignments -> wards
+    SELECT DISTINCT w.ward_id
+    FROM kothis w
+    JOIN assigned_wards a ON a.kothi_id = w.kothi_id
+    WHERE w.ward_id IS NOT NULL
     UNION
-    -- Legacy: assignment may already store sector_id
-    SELECT DISTINCT a.ward_id AS sector_id
+    -- Legacy: assignment may already store ward_id
+    SELECT DISTINCT a.kothi_id AS ward_id
     FROM assigned_wards a
-    JOIN sectors s ON s.sector_id = a.ward_id
+    JOIN wards s ON s.ward_id = a.kothi_id
     UNION
-    -- Zone access expands to all sectors inside the zone
-    SELECT DISTINCT s.sector_id
-    FROM sectors s
+    -- Zone access expands to all wards inside the zone
+    SELECT DISTINCT s.ward_id
+    FROM wards s
     JOIN user_zone_access uza ON uza.zone_id = s.zone_id
     WHERE uza.user_id = $1
   ),
@@ -68,16 +68,16 @@ const getVisibilityCTE = () => `
     -- Direct zone assignments
     SELECT zone_id FROM user_zone_access WHERE user_id = $1
     UNION
-    -- Zones inferred from ward/kothi assignments
+    -- Zones inferred from kothi/kothi assignments
     SELECT DISTINCT COALESCE(w.zone_id, s.zone_id) AS zone_id
-    FROM wards w
-    LEFT JOIN sectors s ON s.sector_id = w.sector_id
-    JOIN assigned_wards a ON a.ward_id = w.ward_id
+    FROM kothis w
+    LEFT JOIN wards s ON s.ward_id = w.ward_id
+    JOIN assigned_wards a ON a.kothi_id = w.kothi_id
     WHERE COALESCE(w.zone_id, s.zone_id) IS NOT NULL
     UNION
     SELECT DISTINCT s.zone_id
-    FROM sectors s
-    JOIN assigned_sectors sec ON sec.sector_id = s.sector_id
+    FROM wards s
+    JOIN assigned_sectors sec ON sec.ward_id = s.ward_id
     WHERE s.zone_id IS NOT NULL
     UNION
     -- City-level access: expand to ALL zones in that city ONLY when user has no zone restrictions for it
@@ -107,16 +107,16 @@ const getVisibilityCTE = () => `
 
 // Visibility rules (strictly scoped — no accidental city-wide leak):
 // 1) full_city_access: user has city assigned with NO zone restrictions → sees all in that city
-// 2) assigned_zones: user sees requests matching their assigned zones (or zones inferred from kothis/wards)
-// 3) direct ward/kothi match
-// 4) sector-based match
+// 2) assigned_zones: user sees requests matching their assigned zones (or zones inferred from kothis/kothis)
+// 3) direct kothi/kothi match
+// 4) ward-based match
 const visibilityWhereClause = `
   (
     spr.city_id IN (SELECT city_id FROM full_city_access)
     OR spr.zone_id IN (SELECT zone_id FROM assigned_zones)
-    OR spr.ward_id IN (SELECT ward_id FROM assigned_wards)
-    OR spr.ward_id IN (SELECT sector_id FROM assigned_sectors)
-    OR spr.kothi_id IN (SELECT ward_id FROM assigned_wards)
+    OR spr.kothi_id IN (SELECT kothi_id FROM assigned_wards)
+    OR spr.kothi_id IN (SELECT ward_id FROM assigned_sectors)
+    OR spr.kothi_id IN (SELECT kothi_id FROM assigned_wards)
   )
 `;
 
@@ -156,8 +156,8 @@ const getRequests = async (req, res) => {
         spr.selfie_url, spr.aadhar_doc_url,
         c.city_name,
         z.zone_name,
-        COALESCE(s.sector_name, w_from_ward.ward_name) as ward_name,
-        w.ward_name as kothi_name,
+        COALESCE(s.ward_name, w_from_ward.kothi_name) as kothi_name,
+        w.kothi_name as kothi_name,
         att.attendance_state,
         att.punch_in as attendance_punch_in,
         att.punch_out as attendance_punch_out,
@@ -165,9 +165,9 @@ const getRequests = async (req, res) => {
       FROM self_punch_requests spr
       LEFT JOIN cities c ON spr.city_id = c.city_id
       LEFT JOIN zones z ON spr.zone_id = z.zone_id
-      LEFT JOIN sectors s ON spr.ward_id = s.sector_id
-      LEFT JOIN wards w_from_ward ON spr.ward_id = w_from_ward.ward_id
-      LEFT JOIN wards w ON spr.kothi_id = w.ward_id
+      LEFT JOIN wards s ON spr.kothi_id = s.ward_id
+      LEFT JOIN kothis w_from_ward ON spr.kothi_id = w_from_ward.kothi_id
+      LEFT JOIN kothis w ON spr.kothi_id = w.kothi_id
       LEFT JOIN LATERAL (
         SELECT
           pa.punch_in,
@@ -253,14 +253,14 @@ const getRequestDetails = async (req, res) => {
         spr.*,
         c.city_name,
         z.zone_name,
-        COALESCE(s.sector_name, w_from_ward.ward_name) as ward_name,
-        w.ward_name as kothi_name
+        COALESCE(s.ward_name, w_from_ward.kothi_name) as kothi_name,
+        w.kothi_name as kothi_name
       FROM self_punch_requests spr
       LEFT JOIN cities c ON spr.city_id = c.city_id
       LEFT JOIN zones z ON spr.zone_id = z.zone_id
-      LEFT JOIN sectors s ON spr.ward_id = s.sector_id
-      LEFT JOIN wards w_from_ward ON spr.ward_id = w_from_ward.ward_id
-      LEFT JOIN wards w ON spr.kothi_id = w.ward_id
+      LEFT JOIN wards s ON spr.kothi_id = s.ward_id
+      LEFT JOIN kothis w_from_ward ON spr.kothi_id = w_from_ward.kothi_id
+      LEFT JOIN kothis w ON spr.kothi_id = w.kothi_id
       WHERE spr.id = $${idParamIndex} AND ${isAdmin ? 'TRUE' : visibilityWhereClause}
     `;
 
@@ -410,7 +410,7 @@ const approveRequest = async (req, res) => {
     pushCol('selfie_url', request.selfie_url);
     pushCol('city_id', request.city_id);
     pushCol('zone_id', request.zone_id);
-    pushCol('ward_id', request.ward_id);
+    pushCol('kothi_id', request.kothi_id);
     pushCol('kothi_id', request.kothi_id);
     pushCol('face_locked', true);
     pushCol('is_active', true);

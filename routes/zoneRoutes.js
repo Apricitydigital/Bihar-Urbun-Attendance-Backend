@@ -39,12 +39,12 @@ router.get(
         }
       }
 
-      // Kothi (Ward) Scope Filtering
+      // Kothi (Kothi) Scope Filtering
       if (!kothiScope.all && kothiScope.ids.length > 0) {
         params.push(kothiScope.ids);
         whereClause += whereClause 
-          ? ' AND z.zone_id IN (SELECT DISTINCT zone_id FROM wards WHERE ward_id = ANY($' + params.length + '))' 
-          : 'WHERE z.zone_id IN (SELECT DISTINCT zone_id FROM wards WHERE ward_id = ANY($' + params.length + '))';
+          ? ' AND z.zone_id IN (SELECT DISTINCT zone_id FROM kothis WHERE kothi_id = ANY($' + params.length + '))' 
+          : 'WHERE z.zone_id IN (SELECT DISTINCT zone_id FROM kothis WHERE kothi_id = ANY($' + params.length + '))';
       } else if (!kothiScope.all) {
         // No Kothis assigned, return nothing
         whereClause += whereClause ? " AND 1=0" : "WHERE 1=0";

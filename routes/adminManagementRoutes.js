@@ -217,8 +217,8 @@ const enrichLogs = async (logs) => {
     const payload = log.action?.payload;
     if (payload && typeof payload === 'object') {
       addId(userIds, payload.user_id || payload.supervisor_id || payload.userId || payload.supervisorId);
-      addId(wardIds, payload.ward_id || payload.wardId);
-      addId(sectorIds, payload.sector_id || payload.sectorId);
+      addId(wardIds, payload.kothi_id || payload.kothiId);
+      addId(sectorIds, payload.ward_id || payload.wardId);
       addId(cityIds, payload.city_id || payload.cityId);
       addId(zoneIds, payload.zone_id || payload.zoneId);
       addId(deptIds, payload.department_id || payload.departmentId);
@@ -228,8 +228,8 @@ const enrichLogs = async (logs) => {
 
   const maps = {
     users: {},
+    kothis: {},
     wards: {},
-    sectors: {},
     cities: {},
     zones: {},
     departments: {},
@@ -248,18 +248,18 @@ const enrichLogs = async (logs) => {
 
       wardIds.size > 0 ? (async () => {
         const res = await pool.query(
-          "SELECT ward_id, ward_name FROM wards WHERE ward_id = ANY($1::int[])",
+          "SELECT kothi_id, kothi_name FROM kothis WHERE kothi_id = ANY($1::int[])",
           [[...wardIds]]
         );
-        res.rows.forEach(r => { maps.wards[r.ward_id] = r.ward_name; });
+        res.rows.forEach(r => { maps.kothis[r.kothi_id] = r.kothi_name; });
       })() : Promise.resolve(),
 
       sectorIds.size > 0 ? (async () => {
         const res = await pool.query(
-          "SELECT sector_id, sector_name FROM sectors WHERE sector_id = ANY($1::int[])",
+          "SELECT ward_id, ward_name FROM wards WHERE ward_id = ANY($1::int[])",
           [[...sectorIds]]
         );
-        res.rows.forEach(r => { maps.sectors[r.sector_id] = r.sector_name; });
+        res.rows.forEach(r => { maps.wards[r.ward_id] = r.ward_name; });
       })() : Promise.resolve(),
 
       cityIds.size > 0 ? (async () => {
@@ -318,11 +318,11 @@ const enrichLogs = async (logs) => {
     if (payload.supervisor_id) payload.supervisor_id = tryEnrich(payload.supervisor_id, maps.users);
     if (payload.supervisorId) payload.supervisorId = tryEnrich(payload.supervisorId, maps.users);
 
+    if (payload.kothi_id) payload.kothi_id = tryEnrich(payload.kothi_id, maps.kothis);
+    if (payload.kothiId) payload.kothiId = tryEnrich(payload.kothiId, maps.kothis);
+
     if (payload.ward_id) payload.ward_id = tryEnrich(payload.ward_id, maps.wards);
     if (payload.wardId) payload.wardId = tryEnrich(payload.wardId, maps.wards);
-
-    if (payload.sector_id) payload.sector_id = tryEnrich(payload.sector_id, maps.sectors);
-    if (payload.sectorId) payload.sectorId = tryEnrich(payload.sectorId, maps.sectors);
 
     if (payload.city_id) payload.city_id = tryEnrich(payload.city_id, maps.cities);
     if (payload.cityId) payload.cityId = tryEnrich(payload.cityId, maps.cities);

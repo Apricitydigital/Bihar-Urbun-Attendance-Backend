@@ -74,7 +74,7 @@ const resolveValidKothiId = async (client, kothiIdRaw) => {
       return parsed;
     }
 
-    // Some deployments keep kothi_assignments sparse while UI sends ward_id as kothi_id.
+    // Some deployments keep kothi_assignments sparse while UI sends kothi_id as kothi_id.
     // Try to backfill a minimal mapping row so FK remains valid and selection is preserved.
     await client.query(
       'INSERT INTO kothi_assignments (id) VALUES ($1) ON CONFLICT (id) DO NOTHING',
@@ -106,20 +106,20 @@ const resolveValidWardId = async (client, wardIdRaw, kothiIdRaw = null) => {
     return null;
   }
 
-  // 1) Direct ward_id (newer UI / canonical path)
+  // 1) Direct kothi_id (newer UI / canonical path)
   try {
     const directWard = await client.query(
-      'SELECT ward_id, sector_id FROM wards WHERE ward_id = $1 LIMIT 1',
+      'SELECT kothi_id, ward_id FROM kothis WHERE kothi_id = $1 LIMIT 1',
       [parsedWard]
     );
     if (directWard.rows.length) {
-      return directWard.rows[0].ward_id;
+      return directWard.rows[0].kothi_id;
     }
 
-    // 2) Legacy UI path: ward_id actually carries sector_id
-    // Prefer the selected kothi ward if it belongs to this sector.
+    // 2) Legacy UI path: kothi_id actually carries ward_id
+    // Prefer the selected kothi kothi if it belongs to this ward.
     const sectorExists = await client.query(
-      'SELECT sector_id FROM sectors WHERE sector_id = $1 LIMIT 1',
+      'SELECT ward_id FROM wards WHERE ward_id = $1 LIMIT 1',
       [parsedWard]
     );
 
@@ -127,37 +127,37 @@ const resolveValidWardId = async (client, wardIdRaw, kothiIdRaw = null) => {
       const parsedKothi = parseInt(kothiIdRaw, 10);
       if (!Number.isNaN(parsedKothi)) {
         const kothiWard = await client.query(
-          'SELECT ward_id FROM wards WHERE ward_id = $1 AND sector_id = $2 LIMIT 1',
+          'SELECT kothi_id FROM kothis WHERE kothi_id = $1 AND ward_id = $2 LIMIT 1',
           [parsedKothi, parsedWard]
         );
         if (kothiWard.rows.length) {
-          return kothiWard.rows[0].ward_id;
+          return kothiWard.rows[0].kothi_id;
         }
       }
 
-      // Fallback to any ward under this sector.
+      // Fallback to any kothi under this ward.
       const anyWardInSector = await client.query(
-        'SELECT ward_id FROM wards WHERE sector_id = $1 ORDER BY ward_id ASC LIMIT 1',
+        'SELECT kothi_id FROM kothis WHERE ward_id = $1 ORDER BY kothi_id ASC LIMIT 1',
         [parsedWard]
       );
       if (anyWardInSector.rows.length) {
-        return anyWardInSector.rows[0].ward_id;
+        return anyWardInSector.rows[0].kothi_id;
       }
     }
 
-    // 3) Last fallback: if kothi itself is a valid ward, use it.
+    // 3) Last fallback: if kothi itself is a valid kothi, use it.
     const parsedKothi = parseInt(kothiIdRaw, 10);
     if (!Number.isNaN(parsedKothi)) {
       const wardFromKothi = await client.query(
-        'SELECT ward_id FROM wards WHERE ward_id = $1 LIMIT 1',
+        'SELECT kothi_id FROM kothis WHERE kothi_id = $1 LIMIT 1',
         [parsedKothi]
       );
       if (wardFromKothi.rows.length) {
-        return wardFromKothi.rows[0].ward_id;
+        return wardFromKothi.rows[0].kothi_id;
       }
     }
   } catch (error) {
-    logger.warn('[SelfPunch] ward_id resolution failed', { message: error.message });
+    logger.warn('[SelfPunch] kothi_id resolution failed', { message: error.message });
     return null;
   }
 
@@ -167,7 +167,7 @@ const resolveValidWardId = async (client, wardIdRaw, kothiIdRaw = null) => {
 const validateInput = (reqBody, reqFiles) => {
   const errors = {};
 
-  const { full_name, mobile, email, aadhar_number, city_id, zone_id, ward_id, emp_code } = reqBody;
+  const { full_name, mobile, email, aadhar_number, city_id, zone_id, kothi_id, emp_code } = reqBody;
 
   if (!full_name || !sanitizeString(full_name)) errors.full_name = "Full name is required.";
 
@@ -187,11 +187,11 @@ const validateInput = (reqBody, reqFiles) => {
 
   if (!city_id || isNaN(parseInt(city_id, 10))) errors.city_id = "Valid city_id is required.";
   if (!zone_id || isNaN(parseInt(zone_id, 10))) errors.zone_id = "Valid zone_id is required.";
-  if (!ward_id || isNaN(parseInt(ward_id, 10))) errors.ward_id = "Valid ward_id (sector in DB) is required.";
+  if (!kothi_id || isNaN(parseInt(kothi_id, 10))) errors.kothi_id = "Valid kothi_id (ward in DB) is required.";
   
   // kothi_id is optional at UI level, but if provided must be integer
   if (reqBody.kothi_id && isNaN(parseInt(reqBody.kothi_id, 10))) {
-    errors.kothi_id = "Valid kothi_id (ward in DB) is required if provided.";
+    errors.kothi_id = "Valid kothi_id (kothi in DB) is required if provided.";
   }
 
   if (!reqFiles || !reqFiles['aadhar_doc'] || !reqFiles['aadhar_doc'][0]) {
@@ -266,34 +266,34 @@ const submitRequest = async (req, res) => {
     }
 
     const safeKothiId = await resolveValidKothiId(client, kothi_id);
-    const safeWardId = await resolveValidWardId(client, ward_id, safeKothiId ?? kothi_id);
+    const safeWardId = await resolveValidWardId(client, kothi_id, safeKothiId ?? kothi_id);
     if (!safeWardId) {
       await client.query('ROLLBACK');
-      logger.warn('[SelfPunch] Invalid ward mapping for request', {
-        requested_ward_id: ward_id ? parseInt(ward_id, 10) : null,
+      logger.warn('[SelfPunch] Invalid kothi mapping for request', {
+        requested_ward_id: kothi_id ? parseInt(kothi_id, 10) : null,
         requested_kothi_id: kothi_id ? parseInt(kothi_id, 10) : null,
         stored_kothi_id: safeKothiId
       });
       return res.status(400).json({
         success: false,
         errors: {
-          ward_id: 'Selected ward/sector is not mapped to a valid ward. Please refresh location and try again.'
+          kothi_id: 'Selected kothi/ward is not mapped to a valid kothi. Please refresh location and try again.'
         }
       });
     }
 
-    // Duplicate check: Same aadhar and mapped ward_id already pending or approved
+    // Duplicate check: Same aadhar and mapped kothi_id already pending or approved
     // Note: To check exact duplicate Aadhar securely, we query by the encrypted string directly
     const duplicateCheck = await client.query(`
       SELECT id FROM self_punch_requests 
       WHERE aadhar_number = $1 
-        AND ward_id = $2 
+        AND kothi_id = $2 
         AND status IN ('pending', 'approved')
     `, [encryptedAadhar, safeWardId]);
 
     if (duplicateCheck.rowCount > 0) {
       await client.query('ROLLBACK');
-      logger.info('[SelfPunch] Duplicate request rejected', { ward_id, ip: req.ip });
+      logger.info('[SelfPunch] Duplicate request rejected', { kothi_id, ip: req.ip });
       return res.status(409).json({ 
         success: false, 
         message: 'A request for this Aadhar number at this location is already pending or approved.' 
@@ -330,7 +330,7 @@ const submitRequest = async (req, res) => {
     `;
     
     logger.info('[SelfPunch] Final location mapping', {
-      requested_ward_id: parseInt(ward_id, 10),
+      requested_ward_id: parseInt(kothi_id, 10),
       stored_ward_id: safeWardId,
       requested_kothi_id: kothi_id ? parseInt(kothi_id, 10) : null,
       stored_kothi_id: safeKothiId
@@ -369,13 +369,13 @@ const submitRequest = async (req, res) => {
     // 6 & 7. Send Socket Notification to Supervisors
     try {
       const io = socketio.getIO();
-      // Emitting to everyone for now, but ideally we'd target supervisors connected to this ward room
+      // Emitting to everyone for now, but ideally we'd target supervisors connected to this kothi room
       // To target specifically:
-      // io.to(`ward_${ward_id}`).emit('new_self_punch_request', { request_id: requestId, ward_id });
+      // io.to(`ward_${kothi_id}`).emit('new_self_punch_request', { request_id: requestId, kothi_id });
       
       io.emit('new_self_punch_request', { 
         request_id: requestId, 
-        ward_id: safeWardId,
+        kothi_id: safeWardId,
         zone_id: parseInt(zone_id, 10)
       });
       logger.info(`[SelfPunch] Socket notification emitted for ${requestId}.`);
@@ -429,7 +429,7 @@ const submitRequest = async (req, res) => {
       return res.status(400).json({
         success: false,
         errors: {
-          ward_id: 'Selected ward is invalid for current DB mapping.'
+          kothi_id: 'Selected kothi is invalid for current DB mapping.'
         }
       });
     }

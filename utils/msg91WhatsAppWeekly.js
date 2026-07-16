@@ -30,7 +30,7 @@ const fetchWeeklyReportData = async () => {
 
   // Common Joins for Road Sweeping Staff- PMC
   const commonJoins = `
-    JOIN wards w ON e.ward_id = w.ward_id
+    JOIN kothis w ON e.kothi_id = w.kothi_id
     JOIN zones z ON w.zone_id = z.zone_id
     JOIN cities c ON z.city_id = c.city_id
     JOIN designation des ON e.designation_id = des.designation_id
@@ -84,11 +84,11 @@ const fetchWeeklyReportData = async () => {
     LIMIT 1;
   `;
 
-  // 3. Top Zone, Ward, Kothi
+  // 3. Top Zone, Kothi, Kothi
   const areaLeaderQuery = `
     SELECT 
       z.zone_name,
-      w.ward_name,
+      w.kothi_name,
       COUNT(DISTINCT e.emp_id) as total,
       COUNT(DISTINCT CASE WHEN a.punch_in_time IS NOT NULL THEN a.emp_id END) as present,
       ROUND((COUNT(DISTINCT CASE WHEN a.punch_in_time IS NOT NULL THEN a.emp_id END)::numeric / NULLIF(COUNT(DISTINCT e.emp_id), 0)) * 100, 1) as perf
@@ -96,7 +96,7 @@ const fetchWeeklyReportData = async () => {
     ${commonJoins}
     LEFT JOIN attendance a ON e.emp_id = a.emp_id AND a.date::date BETWEEN $1 AND $2
     ${commonFilter}
-    GROUP BY z.zone_name, w.ward_name
+    GROUP BY z.zone_name, w.kothi_name
     ORDER BY perf DESC;
   `;
 
@@ -125,15 +125,15 @@ const fetchWeeklyReportData = async () => {
     JOIN supervisor_ward sw ON u.user_id = sw.supervisor_id
     JOIN (
       SELECT 
-        w.ward_id,
+        w.kothi_id,
         a.date::date as d,
         (COUNT(DISTINCT CASE WHEN a.punch_in_time IS NOT NULL THEN a.emp_id END)::numeric / NULLIF(COUNT(DISTINCT e.emp_id), 0)) * 100 as perf
       FROM employee e
       ${commonJoins}
       LEFT JOIN attendance a ON e.emp_id = a.emp_id AND a.date::date BETWEEN $1 AND $2
       ${commonFilter}
-      GROUP BY w.ward_id, a.date::date
-    ) daily_perf ON sw.ward_id = daily_perf.ward_id
+      GROUP BY w.kothi_id, a.date::date
+    ) daily_perf ON sw.kothi_id = daily_perf.kothi_id
     GROUP BY u.user_id, u.name
     ORDER BY avg_perf DESC;
   `;
@@ -171,8 +171,8 @@ const fetchWeeklyReportData = async () => {
       peakTime: peakData.hour_block,
       peakCount: peakData.count,
       topZone: topZone?.zone_name || "N/A",
-      topWard: topWard?.ward_name || "N/A",
-      topKothis: topKothis.map(k => k.ward_name),
+      topWard: topWard?.kothi_name || "N/A",
+      topKothis: topKothis.map(k => k.kothi_name),
       starEmployees: stars.rows.map(s => s.name),
       topSupervisor: supervisors.rows[0]?.supervisor_name || "N/A",
       bottomSupervisors: supervisors.rows.slice(-3).reverse().map(s => s.supervisor_name)

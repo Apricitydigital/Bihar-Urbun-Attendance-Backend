@@ -97,15 +97,15 @@ const normalizeMetricEntries = (entries = []) => {
   );
 };
 
-const getRequestCityIdFromWard = async (wardId) => {
-  const parsedWardId = Number(wardId);
+const getRequestCityIdFromWard = async (kothiId) => {
+  const parsedWardId = Number(kothiId);
   if (!Number.isInteger(parsedWardId) || parsedWardId <= 0) return null;
 
   const { rows } = await pool.query(
     `SELECT z.city_id
-     FROM wards w
+     FROM kothis w
      JOIN zones z ON z.zone_id = w.zone_id
-     WHERE w.ward_id = $1
+     WHERE w.kothi_id = $1
      LIMIT 1`,
     [parsedWardId]
   );
@@ -120,7 +120,7 @@ const getCityIdForEmployee = async (employeeId) => {
   const { rows } = await pool.query(
     `SELECT z.city_id
      FROM employee e
-     JOIN wards w ON w.ward_id = e.ward_id
+     JOIN kothis w ON w.kothi_id = e.kothi_id
      JOIN zones z ON z.zone_id = w.zone_id
      WHERE e.emp_id = $1
      LIMIT 1`,
@@ -130,9 +130,9 @@ const getCityIdForEmployee = async (employeeId) => {
   return rows[0]?.city_id ? Number(rows[0].city_id) : null;
 };
 
-const resolveRequestCityId = async ({ wardId, supervisorId, employeeId } = {}) => {
-  if (wardId) {
-    const cityId = await getRequestCityIdFromWard(wardId);
+const resolveRequestCityId = async ({ kothiId, supervisorId, employeeId } = {}) => {
+  if (kothiId) {
+    const cityId = await getRequestCityIdFromWard(kothiId);
     if (cityId) return cityId;
   }
 
@@ -147,11 +147,11 @@ const resolveRequestCityId = async ({ wardId, supervisorId, employeeId } = {}) =
       const { rows } = await pool.query(
         `SELECT z.city_id
          FROM (
-           SELECT ward_id FROM supervisor_ward WHERE supervisor_id = $1
+           SELECT kothi_id FROM supervisor_ward WHERE supervisor_id = $1
            UNION
-           SELECT ward_id FROM supervisor_kothi WHERE supervisor_id = $1
+           SELECT kothi_id FROM supervisor_kothi WHERE supervisor_id = $1
          ) sw
-         JOIN wards w ON w.ward_id = sw.ward_id
+         JOIN kothis w ON w.kothi_id = sw.kothi_id
          JOIN zones z ON z.zone_id = w.zone_id
          LIMIT 1`,
         [parsedSupId]
@@ -183,7 +183,7 @@ const getEmployeeCityBreakdown = async (employeeIds = []) => {
   const { rows } = await pool.query(
     `SELECT z.city_id, COUNT(*)::int AS attendance_count
      FROM employee e
-     JOIN wards w ON w.ward_id = e.ward_id
+     JOIN kothis w ON w.kothi_id = e.kothi_id
      JOIN zones z ON z.zone_id = w.zone_id
      WHERE e.emp_id = ANY($1::int[])
      GROUP BY z.city_id`,

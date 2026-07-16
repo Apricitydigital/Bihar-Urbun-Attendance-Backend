@@ -35,46 +35,46 @@ const fetchCitiesFromAssignments = async (userId, includeCityMetadata = false) =
     ? `
         WITH all_ward_ids AS (
           -- Direct Kothi Assignments
-          SELECT ward_id FROM user_kothi_access WHERE user_id = $1
+          SELECT kothi_id FROM user_kothi_access WHERE user_id = $1
           UNION
           -- Legacy Kothi Assignments
-          SELECT ward_id FROM supervisor_kothi WHERE supervisor_id = $1
+          SELECT kothi_id FROM supervisor_kothi WHERE supervisor_id = $1
           UNION
-          -- Supervisor → ward assignments
-          SELECT ward_id FROM supervisor_ward WHERE supervisor_id = $1
+          -- Supervisor → kothi assignments
+          SELECT kothi_id FROM supervisor_ward WHERE supervisor_id = $1
           UNION
           -- Zone-level Assignments
-          SELECT ward_id FROM wards WHERE zone_id IN (SELECT zone_id FROM user_zone_access WHERE user_id = $1)
+          SELECT kothi_id FROM kothis WHERE zone_id IN (SELECT zone_id FROM user_zone_access WHERE user_id = $1)
           UNION
           -- City-level Assignments
-          SELECT w.ward_id FROM wards w
+          SELECT w.kothi_id FROM kothis w
           JOIN zones z ON w.zone_id = z.zone_id
           WHERE z.city_id IN (SELECT city_id FROM user_city_access WHERE user_id = $1)
         )
         SELECT DISTINCT c.city_id, c.city_name
         FROM all_ward_ids awi
-        JOIN wards w ON w.ward_id = awi.ward_id
+        JOIN kothis w ON w.kothi_id = awi.kothi_id
         JOIN zones z ON z.zone_id = w.zone_id
         JOIN cities c ON c.city_id = z.city_id
         ORDER BY c.city_name ASC
       `
     : `
         WITH all_ward_ids AS (
-          SELECT ward_id FROM user_kothi_access WHERE user_id = $1
+          SELECT kothi_id FROM user_kothi_access WHERE user_id = $1
           UNION
-          SELECT ward_id FROM supervisor_kothi WHERE supervisor_id = $1
+          SELECT kothi_id FROM supervisor_kothi WHERE supervisor_id = $1
           UNION
-          SELECT ward_id FROM supervisor_ward WHERE supervisor_id = $1
+          SELECT kothi_id FROM supervisor_ward WHERE supervisor_id = $1
           UNION
-          SELECT ward_id FROM wards WHERE zone_id IN (SELECT zone_id FROM user_zone_access WHERE user_id = $1)
+          SELECT kothi_id FROM kothis WHERE zone_id IN (SELECT zone_id FROM user_zone_access WHERE user_id = $1)
           UNION
-          SELECT w.ward_id FROM wards w
+          SELECT w.kothi_id FROM kothis w
           JOIN zones z ON w.zone_id = z.zone_id
           WHERE z.city_id IN (SELECT city_id FROM user_city_access WHERE user_id = $1)
         )
         SELECT DISTINCT c.city_id
         FROM all_ward_ids awi
-        JOIN wards w ON w.ward_id = awi.ward_id
+        JOIN kothis w ON w.kothi_id = awi.kothi_id
         JOIN zones z ON z.zone_id = w.zone_id
         JOIN cities c ON c.city_id = z.city_id
       `;

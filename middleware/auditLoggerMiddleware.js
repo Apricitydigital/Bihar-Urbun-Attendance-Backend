@@ -13,8 +13,8 @@ const AUDITABLE_PREFIXES = [
   "/api/geofencing",
   "/api/cities",
   "/api/zones",
+  "/api/kothis",
   "/api/wards",
-  "/api/sectors",
   "/api/departments",
   "/api/designations",
   "/api/announcements",
@@ -70,11 +70,11 @@ const fetchDeleteContext = async (req) => {
          e.emp_code,
          c.city_name,
          z.zone_name,
-         s.sector_name,
-         w.ward_name
+         s.ward_name,
+         w.kothi_name
        FROM employee e
-       LEFT JOIN wards w ON e.ward_id = w.ward_id
-       LEFT JOIN sectors s ON w.sector_id = s.sector_id
+       LEFT JOIN kothis w ON e.kothi_id = w.kothi_id
+       LEFT JOIN wards s ON w.ward_id = s.ward_id
        LEFT JOIN zones z ON COALESCE(w.zone_id, s.zone_id) = z.zone_id
        LEFT JOIN cities c ON z.city_id = c.city_id
        WHERE e.emp_id = $1
@@ -90,19 +90,19 @@ const fetchDeleteContext = async (req) => {
     }
   }
 
-  if (normalizedPath.startsWith("/api/wards/")) {
+  if (normalizedPath.startsWith("/api/kothis/")) {
     const { rows } = await pool.query(
       `SELECT
-         w.ward_id,
-         w.ward_name,
-         s.sector_name,
+         w.kothi_id,
+         w.kothi_name,
+         s.ward_name,
          z.zone_name,
          c.city_name
-       FROM wards w
-       LEFT JOIN sectors s ON w.sector_id = s.sector_id
+       FROM kothis w
+       LEFT JOIN wards s ON w.ward_id = s.ward_id
        LEFT JOIN zones z ON w.zone_id = z.zone_id
        LEFT JOIN cities c ON z.city_id = c.city_id
-       WHERE w.ward_id = $1
+       WHERE w.kothi_id = $1
        LIMIT 1`,
       [entityId]
     );
@@ -115,28 +115,28 @@ const fetchDeleteContext = async (req) => {
     }
   }
 
-  if (normalizedPath.startsWith("/api/sectors/")) {
+  if (normalizedPath.startsWith("/api/wards/")) {
     const { rows } = await pool.query(
       `SELECT
-         s.sector_id,
-         s.sector_name,
+         s.ward_id,
+         s.ward_name,
          z.zone_name,
          c.city_name,
-         COUNT(w.ward_id)::int AS kothi_count
-       FROM sectors s
+         COUNT(w.kothi_id)::int AS kothi_count
+       FROM wards s
        LEFT JOIN zones z ON s.zone_id = z.zone_id
        LEFT JOIN cities c ON z.city_id = c.city_id
-       LEFT JOIN wards w ON w.sector_id = s.sector_id
-       WHERE s.sector_id = $1
-       GROUP BY s.sector_id, s.sector_name, z.zone_name, c.city_name
+       LEFT JOIN kothis w ON w.ward_id = s.ward_id
+       WHERE s.ward_id = $1
+       GROUP BY s.ward_id, s.ward_name, z.zone_name, c.city_name
        LIMIT 1`,
       [entityId]
     );
 
     if (rows.length > 0) {
       return {
-        entityType: "ward",
-        ward: rows[0],
+        entityType: "kothi",
+        kothi: rows[0],
       };
     }
   }
@@ -214,11 +214,11 @@ const fetchDeleteContext = async (req) => {
   if (normalizedPath.startsWith("/api/supervisor/")) {
     const { rows } = await pool.query(
       `WITH all_assignments AS (
-         SELECT user_id, ward_id FROM user_kothi_access
+         SELECT user_id, kothi_id FROM user_kothi_access
          UNION
-         SELECT supervisor_id AS user_id, ward_id FROM supervisor_kothi
+         SELECT supervisor_id AS user_id, kothi_id FROM supervisor_kothi
          UNION
-         SELECT supervisor_id AS user_id, ward_id FROM supervisor_ward
+         SELECT supervisor_id AS user_id, kothi_id FROM supervisor_ward
        )
        SELECT
          u.user_id,
@@ -228,12 +228,12 @@ const fetchDeleteContext = async (req) => {
          u.phone,
          STRING_AGG(DISTINCT c.city_name, ', ') AS city_name,
          STRING_AGG(DISTINCT z.zone_name, ', ') AS zone_name,
-         STRING_AGG(DISTINCT s.sector_name, ', ') AS ward_name,
-         STRING_AGG(DISTINCT w.ward_name, ', ') AS kothi_name
+         STRING_AGG(DISTINCT s.ward_name, ', ') AS kothi_name,
+         STRING_AGG(DISTINCT w.kothi_name, ', ') AS kothi_name
        FROM users u
        LEFT JOIN all_assignments aa ON u.user_id = aa.user_id
-       LEFT JOIN wards w ON aa.ward_id = w.ward_id
-       LEFT JOIN sectors s ON w.sector_id = s.sector_id
+       LEFT JOIN kothis w ON aa.kothi_id = w.kothi_id
+       LEFT JOIN wards s ON w.ward_id = s.ward_id
        LEFT JOIN zones z ON COALESCE(s.zone_id, w.zone_id) = z.zone_id
        LEFT JOIN cities c ON z.city_id = c.city_id
        WHERE u.user_id = $1
@@ -256,12 +256,12 @@ const fetchDeleteContext = async (req) => {
          sw.assigned_id,
          u.name,
          u.emp_code,
-         w.ward_name,
+         w.kothi_name,
          z.zone_name,
          c.city_name
        FROM supervisor_ward sw
        JOIN users u ON sw.supervisor_id = u.user_id
-       JOIN wards w ON sw.ward_id = w.ward_id
+       JOIN kothis w ON sw.kothi_id = w.kothi_id
        JOIN zones z ON w.zone_id = z.zone_id
        JOIN cities c ON z.city_id = c.city_id
        WHERE sw.assigned_id = $1
@@ -283,14 +283,14 @@ const fetchDeleteContext = async (req) => {
          sk.assigned_id,
          u.name,
          u.emp_code,
-         w.ward_name AS kothi_name,
-         s.sector_name AS ward_name,
+         w.kothi_name AS kothi_name,
+         s.ward_name AS kothi_name,
          z.zone_name,
          c.city_name
        FROM supervisor_kothi sk
        JOIN users u ON sk.supervisor_id = u.user_id
-       JOIN wards w ON sk.ward_id = w.ward_id
-       LEFT JOIN sectors s ON w.sector_id = s.sector_id
+       JOIN kothis w ON sk.kothi_id = w.kothi_id
+       LEFT JOIN wards s ON w.ward_id = s.ward_id
        LEFT JOIN zones z ON COALESCE(s.zone_id, w.zone_id) = z.zone_id
        LEFT JOIN cities c ON z.city_id = c.city_id
        WHERE sk.assigned_id = $1
@@ -358,23 +358,23 @@ const enrichPayload = async (data) => {
       }
     }
 
-    // ward_id → ward_name from wards table
-    const wardIdVal = enriched.ward_id || enriched.wardId;
+    // kothi_id → kothi_name from kothis table
+    const wardIdVal = enriched.kothi_id || enriched.kothiId;
     if (wardIdVal) {
-      const r = await pool.query("SELECT ward_name FROM wards WHERE ward_id = $1", [wardIdVal]);
+      const r = await pool.query("SELECT kothi_name FROM kothis WHERE kothi_id = $1", [wardIdVal]);
       if (r.rows.length > 0) {
-        const key = enriched.ward_id ? "ward_id" : "wardId";
-        enriched[key] = r.rows[0].ward_name;
+        const key = enriched.kothi_id ? "kothi_id" : "kothiId";
+        enriched[key] = r.rows[0].kothi_name;
       }
     }
 
-    // sector_id → sector_name from sectors table
-    const sectorIdVal = enriched.sector_id || enriched.sectorId;
+    // ward_id → ward_name from wards table
+    const sectorIdVal = enriched.ward_id || enriched.wardId;
     if (sectorIdVal) {
-      const r = await pool.query("SELECT sector_name FROM sectors WHERE sector_id = $1", [sectorIdVal]);
+      const r = await pool.query("SELECT ward_name FROM wards WHERE ward_id = $1", [sectorIdVal]);
       if (r.rows.length > 0) {
-        const key = enriched.sector_id ? "sector_id" : "sectorId";
-        enriched[key] = r.rows[0].sector_name;
+        const key = enriched.ward_id ? "ward_id" : "wardId";
+        enriched[key] = r.rows[0].ward_name;
       }
     }
 
@@ -484,32 +484,32 @@ const getActionDescription = (req, body, context = null) => {
     if (method === "PUT") return `Supervisor Management: Updated Supervisor - ${req.body?.name || req.body?.email || `ID ${id || "unknown"}`}`;
     if (method === "DELETE") {
       if (deletedSupervisor) {
-        return `Supervisor Management: Deleted Supervisor - ${deletedSupervisor.name || deletedSupervisor.emp_code || `ID ${id || "unknown"}`} | City: ${deletedSupervisor.city_name || "N/A"} | Zone: ${deletedSupervisor.zone_name || "N/A"} | Ward: ${deletedSupervisor.ward_name || "N/A"} | Kothi: ${deletedSupervisor.kothi_name || "N/A"}`;
+        return `Supervisor Management: Deleted Supervisor - ${deletedSupervisor.name || deletedSupervisor.emp_code || `ID ${id || "unknown"}`} | City: ${deletedSupervisor.city_name || "N/A"} | Zone: ${deletedSupervisor.zone_name || "N/A"} | Kothi: ${deletedSupervisor.kothi_name || "N/A"} | Kothi: ${deletedSupervisor.kothi_name || "N/A"}`;
       }
       return `Supervisor Management: Deleted Supervisor ID: ${id || "unknown"}`;
     }
   }
 
-  // ── Assign Supervisor to Ward/Kothi ──
+  // ── Assign Supervisor to Kothi/Kothi ──
   if (url.includes("/api/assignedWardRoutes") || url.includes("/api/assignedKothiRoutes")) {
     const wardAssignment = context?.supervisorWardAssignment;
     const kothiAssignment = context?.supervisorKothiAssignment;
     if (method === "POST") {
       const supName = req.body?.supervisorName || req.body?.name || "";
-      const ward = req.body?.ward_name || req.body?.wardName || "";
-      if (supName && ward) return `Assign Supervisor: Assigned Kothi "${ward}" to Supervisor: ${supName}`;
-      if (supName) return `Assign Supervisor: Created ward/kothi assignment for: ${supName}`;
-      return "Assign Supervisor: Created new ward/kothi assignment";
+      const kothi = req.body?.kothi_name || req.body?.kothiName || "";
+      if (supName && kothi) return `Assign Supervisor: Assigned Kothi "${kothi}" to Supervisor: ${supName}`;
+      if (supName) return `Assign Supervisor: Created kothi/kothi assignment for: ${supName}`;
+      return "Assign Supervisor: Created new kothi/kothi assignment";
     }
-    if (method === "PUT") return `Assign Supervisor: Updated ward/kothi assignment ID: ${id || "unknown"}`;
+    if (method === "PUT") return `Assign Supervisor: Updated kothi/kothi assignment ID: ${id || "unknown"}`;
     if (method === "DELETE") {
       if (wardAssignment) {
-        return `Assign Supervisor: Removed ward assignment - ${wardAssignment.name || wardAssignment.emp_code || "unknown"} | Kothi: ${wardAssignment.ward_name || "N/A"} | Zone: ${wardAssignment.zone_name || "N/A"} | City: ${wardAssignment.city_name || "N/A"}`;
+        return `Assign Supervisor: Removed kothi assignment - ${wardAssignment.name || wardAssignment.emp_code || "unknown"} | Kothi: ${wardAssignment.kothi_name || "N/A"} | Zone: ${wardAssignment.zone_name || "N/A"} | City: ${wardAssignment.city_name || "N/A"}`;
       }
       if (kothiAssignment) {
-        return `Assign Supervisor: Removed kothi assignment - ${kothiAssignment.name || kothiAssignment.emp_code || "unknown"} | Ward: ${kothiAssignment.ward_name || "N/A"} | Kothi: ${kothiAssignment.kothi_name || "N/A"} | Zone: ${kothiAssignment.zone_name || "N/A"} | City: ${kothiAssignment.city_name || "N/A"}`;
+        return `Assign Supervisor: Removed kothi assignment - ${kothiAssignment.name || kothiAssignment.emp_code || "unknown"} | Kothi: ${kothiAssignment.kothi_name || "N/A"} | Kothi: ${kothiAssignment.kothi_name || "N/A"} | Zone: ${kothiAssignment.zone_name || "N/A"} | City: ${kothiAssignment.city_name || "N/A"}`;
       }
-      return `Assign Supervisor: Removed ward/kothi assignment ID: ${id || "unknown"}`;
+      return `Assign Supervisor: Removed kothi/kothi assignment ID: ${id || "unknown"}`;
     }
   }
 
@@ -524,7 +524,7 @@ const getActionDescription = (req, body, context = null) => {
     if (method === "PUT") return `Employee Management: Updated Employee record - ${empName || `ID ${id || "unknown"}`}`;
     if (method === "DELETE") {
       if (deletedEmployee) {
-        return `Employee Management: Deleted Employee - ${deletedEmployee.name || deletedEmployee.emp_code || `ID ${id || "unknown"}`} | City: ${deletedEmployee.city_name || "N/A"} | Zone: ${deletedEmployee.zone_name || "N/A"} | Ward: ${deletedEmployee.sector_name || "N/A"} | Kothi: ${deletedEmployee.ward_name || "N/A"}`;
+        return `Employee Management: Deleted Employee - ${deletedEmployee.name || deletedEmployee.emp_code || `ID ${id || "unknown"}`} | City: ${deletedEmployee.city_name || "N/A"} | Zone: ${deletedEmployee.zone_name || "N/A"} | Kothi: ${deletedEmployee.ward_name || "N/A"} | Kothi: ${deletedEmployee.kothi_name || "N/A"}`;
       }
       return `Employee Management: Deleted Employee ID: ${id || "unknown"}`;
     }
@@ -532,7 +532,7 @@ const getActionDescription = (req, body, context = null) => {
 
   // ── GeoFencing Page ──
   if (url.includes("/api/geofencing")) {
-    const name = req.body?.name || req.body?.ward_name || req.body?.kothi_name || req.body?.kothiName || "";
+    const name = req.body?.name || req.body?.kothi_name || req.body?.kothi_name || req.body?.kothiName || "";
     if (url.includes("/approve")) return `GeoFencing: Approved GeoFence request${name ? ` for: ${name}` : ""}`;
     if (url.includes("/reject")) return `GeoFencing: Rejected GeoFence request${name ? ` for: ${name}` : ""}`;
     if (method === "POST") return `GeoFencing: Created new GeoFence boundary${name ? ` for: ${name}` : ""}`;
@@ -583,29 +583,29 @@ const getActionDescription = (req, body, context = null) => {
     }
   }
 
-  // ── Master Setup — Wards / Sectors ──
-  if (url.includes("/api/sectors")) {
-    const name = req.body?.sector_name || req.body?.sectorName || req.body?.name || "";
-    const deletedWard = context?.ward;
-    if (method === "POST") return `Master Setup (Wards): Added new Ward - "${name || "unknown"}"`;
-    if (method === "PUT") return `Master Setup (Wards): Updated Ward - "${name || `ID ${id || "unknown"}`}"`;
+  // ── Master Setup — Kothis / Wards ──
+  if (url.includes("/api/wards")) {
+    const name = req.body?.ward_name || req.body?.wardName || req.body?.name || "";
+    const deletedWard = context?.kothi;
+    if (method === "POST") return `Master Setup (Kothis): Added new Kothi - "${name || "unknown"}"`;
+    if (method === "PUT") return `Master Setup (Kothis): Updated Kothi - "${name || `ID ${id || "unknown"}`}"`;
     if (method === "DELETE") {
       if (deletedWard) {
-        return `Master Setup (Wards): Deleted Ward - ${deletedWard.sector_name || `ID ${id || "unknown"}`} | Zone: ${deletedWard.zone_name || "N/A"} | City: ${deletedWard.city_name || "N/A"} | Kothis: ${deletedWard.kothi_count ?? 0}`;
+        return `Master Setup (Kothis): Deleted Kothi - ${deletedWard.ward_name || `ID ${id || "unknown"}`} | Zone: ${deletedWard.zone_name || "N/A"} | City: ${deletedWard.city_name || "N/A"} | Kothis: ${deletedWard.kothi_count ?? 0}`;
       }
-      return `Master Setup (Wards): Deleted Ward ID: ${id || "unknown"}`;
+      return `Master Setup (Kothis): Deleted Kothi ID: ${id || "unknown"}`;
     }
   }
 
-  // ── Master Setup — Kothi (sub-ward) ──
-  if (url.includes("/api/wards")) {
-    const name = req.body?.ward_name || req.body?.wardName || req.body?.name || "";
+  // ── Master Setup — Kothi (sub-kothi) ──
+  if (url.includes("/api/kothis")) {
+    const name = req.body?.kothi_name || req.body?.kothiName || req.body?.name || "";
     const deletedKothi = context?.kothi;
     if (method === "POST") return `Master Setup (Kothi): Added new Kothi - "${name || "unknown"}"`;
     if (method === "PUT") return `Master Setup (Kothi): Updated Kothi - "${name || `ID ${id || "unknown"}`}"`;
     if (method === "DELETE") {
       if (deletedKothi) {
-        return `Master Setup (Kothi): Deleted Kothi - ${deletedKothi.ward_name || `ID ${id || "unknown"}`} | Ward: ${deletedKothi.sector_name || "N/A"} | Zone: ${deletedKothi.zone_name || "N/A"} | City: ${deletedKothi.city_name || "N/A"}`;
+        return `Master Setup (Kothi): Deleted Kothi - ${deletedKothi.kothi_name || `ID ${id || "unknown"}`} | Kothi: ${deletedKothi.ward_name || "N/A"} | Zone: ${deletedKothi.zone_name || "N/A"} | City: ${deletedKothi.city_name || "N/A"}`;
       }
       return `Master Setup (Kothi): Deleted Kothi ID: ${id || "unknown"}`;
     }
@@ -752,8 +752,8 @@ async function logRequest(req, res, responseBody) {
             deleted_employee_emp_code: deleteContext.employee.emp_code,
             city_name: deleteContext.employee.city_name,
             zone_name: deleteContext.employee.zone_name,
-            ward_name: deleteContext.employee.sector_name,
             kothi_name: deleteContext.employee.ward_name,
+            kothi_name: deleteContext.employee.kothi_name,
             delete_context: deleteContext,
           }
         : deleteContext

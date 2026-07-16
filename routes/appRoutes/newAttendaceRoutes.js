@@ -755,7 +755,7 @@ const GROUP_FALLBACK_ENABLED =
 
 // --- COST OPTIMIZATION: Individual punch fallback loop ------------------------
 // When SearchFacesByImage returns no match, fallbackMatchByCompare runs a
-// CompareFaces call for EVERY employee in the ward � extremely expensive at scale.
+// CompareFaces call for EVERY employee in the kothi � extremely expensive at scale.
 // Default: DISABLED. Enable only for debugging via env flag.
 // Set INDIVIDUAL_FALLBACK_ENABLED=true in .env ONLY if needed.
 const INDIVIDUAL_FALLBACK_ENABLED =
@@ -980,15 +980,15 @@ const ATTENDANCE_SELECT_FIELDS = `
     e.emp_code,
     e.name AS employee_name,
     d.designation_name,
-    w.ward_id,
-    w.ward_name
+    w.kothi_id,
+    w.kothi_name
 `;
 
 const ATTENDANCE_SELECT_JOINS = `
   FROM attendance a
   JOIN employee e ON a.emp_id = e.emp_id
   JOIN designation d ON e.designation_id = d.designation_id
-  JOIN wards w ON e.ward_id = w.ward_id
+  JOIN kothis w ON e.kothi_id = w.kothi_id
 `;
 
 const buildAttendanceRecordQuery = (whereClause) => `
@@ -1122,27 +1122,27 @@ async function getOrCreateAttendanceRecord(emp_id, date, options = {}) {
 
   if (!emp_id) throw new Error("Employee ID is required");
 
-  // ? PERF FIX: Single query fetches ward_id + display fields together (was 2 separate queries)
+  // ? PERF FIX: Single query fetches kothi_id + display fields together (was 2 separate queries)
   const empRow = await pool.query(
-    `SELECT e.ward_id, e.emp_code, e.name AS employee_name,
-            d.designation_name, w.ward_name
+    `SELECT e.kothi_id, e.emp_code, e.name AS employee_name,
+            d.designation_name, w.kothi_name
      FROM employee e
      LEFT JOIN designation d ON e.designation_id = d.designation_id
-     LEFT JOIN wards w ON e.ward_id = w.ward_id
+     LEFT JOIN kothis w ON e.kothi_id = w.kothi_id
      WHERE e.emp_id = $1
      LIMIT 1`,
     [emp_id]
   );
   const empMeta = empRow.rows[0] || {};
-  const ward_id = empMeta.ward_id ?? null;
+  const kothi_id = empMeta.kothi_id ?? null;
 
   // Create new record if not exists
   const insertResult = await pool.query(
-    `INSERT INTO attendance (emp_id, date, ward_id) 
+    `INSERT INTO attendance (emp_id, date, kothi_id) 
      VALUES ($1, $2::date, $3) 
      ON CONFLICT (emp_id, date) DO NOTHING
-     RETURNING attendance_id, date, ward_id`,
-    [emp_id, targetDate, ward_id]
+     RETURNING attendance_id, date, kothi_id`,
+    [emp_id, targetDate, kothi_id]
   );
 
   if (insertResult.rowCount === 0) {
@@ -1153,7 +1153,7 @@ async function getOrCreateAttendanceRecord(emp_id, date, options = {}) {
     insertResult.rows[0] ||
     (
       await pool.query(
-        `SELECT attendance_id, date, ward_id FROM attendance WHERE emp_id = $1 AND date = $2::date LIMIT 1`,
+        `SELECT attendance_id, date, kothi_id FROM attendance WHERE emp_id = $1 AND date = $2::date LIMIT 1`,
         [emp_id, targetDate]
       )
     ).rows[0];
@@ -1181,8 +1181,8 @@ async function getOrCreateAttendanceRecord(emp_id, date, options = {}) {
     emp_code: null,
     employee_name: null,
     designation_name: null,
-    ward_id: baseAttendance.ward_id,
-    ward_name: null,
+    kothi_id: baseAttendance.kothi_id,
+    kothi_name: null,
   };
 
   // ? PERF FIX: Reuse empMeta fetched above � no additional JOIN query needed
@@ -1226,7 +1226,7 @@ async function processPunch(
         empCode: uploadContext?.emp_code,
         empId: uploadContext?.emp_id,
         employeeName: uploadContext?.employee_name,
-        wardName: uploadContext?.ward_name,
+        kothiName: uploadContext?.kothi_name,
         zoneName: uploadContext?.zone_name,
         cityName: uploadContext?.city_name,
         address: locationMeta.address,
@@ -1445,27 +1445,27 @@ async function loadFaceBuffer(faceEmbedding, employeeId = null, empCode = null) 
   return null;
 }
 
-async function fetchSupervisorFaceEmbeddings(supervisorId, wardId) {
+async function fetchSupervisorFaceEmbeddings(supervisorId, kothiId) {
   if (!supervisorId) return [];
   const { rows } = await pool.query(
     `
       SELECT DISTINCT e.emp_id, e.emp_code, e.name, e.face_embedding
         FROM employee e
-        LEFT JOIN wards w ON e.ward_id = w.ward_id
+        LEFT JOIN kothis w ON e.kothi_id = w.kothi_id
        WHERE e.face_embedding IS NOT NULL
-         AND ($2::int IS NULL OR e.ward_id = $2::int)
+         AND ($2::int IS NULL OR e.kothi_id = $2::int)
          AND (
            EXISTS (
              SELECT 1 FROM supervisor_ward sw
-             WHERE sw.ward_id = e.ward_id AND sw.supervisor_id = $1
+             WHERE sw.kothi_id = e.kothi_id AND sw.supervisor_id = $1
            )
            OR EXISTS (
              SELECT 1 FROM user_kothi_access uk
-             WHERE uk.ward_id = e.ward_id AND uk.user_id = $1
+             WHERE uk.kothi_id = e.kothi_id AND uk.user_id = $1
            )
            OR EXISTS (
              SELECT 1 FROM supervisor_kothi sk
-             WHERE sk.ward_id = e.ward_id AND sk.supervisor_id = $1
+             WHERE sk.kothi_id = e.kothi_id AND sk.supervisor_id = $1
            )
            OR EXISTS (
              SELECT 1 FROM user_zone_access uz
@@ -1473,7 +1473,7 @@ async function fetchSupervisorFaceEmbeddings(supervisorId, wardId) {
            )
          )
     `,
-    [supervisorId, wardId]
+    [supervisorId, kothiId]
   );
   return rows || [];
 }
@@ -1481,7 +1481,7 @@ async function fetchSupervisorFaceEmbeddings(supervisorId, wardId) {
 async function fallbackMatchByCompare(
   faceBuffer,
   supervisorId,
-  wardId,
+  kothiId,
   threshold
 ) {
   if (!faceBuffer || !supervisorId) return null;
@@ -1489,7 +1489,7 @@ async function fallbackMatchByCompare(
   // Be a bit more tolerant for roster fallback to avoid false negatives
   const compareThreshold = Math.max(85, Math.min(threshold || 97, 95));
 
-  const candidates = await fetchSupervisorFaceEmbeddings(supervisorId, wardId);
+  const candidates = await fetchSupervisorFaceEmbeddings(supervisorId, kothiId);
   if (!candidates || candidates.length === 0) return null;
 
   // Run candidate image download and AWS CompareFaces in parallel
@@ -2004,11 +2004,11 @@ router.post("/face-attendance", upload.single("image"), async (req, res) => {
       group_mode: groupModeAlias,
       mode: rawMode,
       faceMatchThreshold: rawThreshold,
-      ward_id: rawWardId,
-      wardId: rawWardIdAlt,
+      kothi_id: rawWardId,
+      kothiId: rawWardIdAlt,
     } = req.body;
     const attendanceDate = resolveAttendanceDate(req.body, req.query);
-    const wardId = normalizeId(rawWardId ?? rawWardIdAlt ?? null);
+    const kothiId = normalizeId(rawWardId ?? rawWardIdAlt ?? null);
     const supervisorId = normalizeId(
       userId ?? req.body?.supervisor_id ?? req.body?.user_id
     );
@@ -2063,7 +2063,7 @@ router.post("/face-attendance", upload.single("image"), async (req, res) => {
 
     if (groupModeRequested) {
       const groupTrackingCityId = await resolveRequestCityId({
-        wardId,
+        kothiId,
         supervisorId,
       });
       const groupTracking = {
@@ -2231,11 +2231,11 @@ router.post("/face-attendance", upload.single("image"), async (req, res) => {
 
           // Group-only safe fallback: roster-level CompareFaces
           // ?? COST OPT: GROUP_FALLBACK_ENABLED guards this path.
-          // Each call here = N paid CompareFaces calls (N = employees in ward).
+          // Each call here = N paid CompareFaces calls (N = employees in kothi).
           // Only trigger when collection misses AND fallback is enabled.
           if (!employeeRecord && supervisorId && GROUP_FALLBACK_ENABLED) {
             const fallback = await fallbackMatchByCompare(
-              faceImageBuffer, supervisorId, wardId,
+              faceImageBuffer, supervisorId, kothiId,
               Math.max(85, Math.min(matchThreshold, 90))
             );
             if (fallback?.employee) {
@@ -2282,19 +2282,19 @@ router.post("/face-attendance", upload.single("image"), async (req, res) => {
           if (supervisorId) {
             const rosterCheck = await pool.query(
               `SELECT 1 FROM employee e
-               LEFT JOIN wards w ON e.ward_id = w.ward_id
+               LEFT JOIN kothis w ON e.kothi_id = w.kothi_id
                WHERE e.emp_id = $1 AND (
                  EXISTS (
                    SELECT 1 FROM supervisor_ward sw
-                   WHERE sw.ward_id = e.ward_id AND sw.supervisor_id = $2
+                   WHERE sw.kothi_id = e.kothi_id AND sw.supervisor_id = $2
                  )
                  OR EXISTS (
                    SELECT 1 FROM user_kothi_access uk
-                   WHERE uk.ward_id = e.ward_id AND uk.user_id = $2
+                   WHERE uk.kothi_id = e.kothi_id AND uk.user_id = $2
                  )
                  OR EXISTS (
                    SELECT 1 FROM supervisor_kothi sk
-                   WHERE sk.ward_id = e.ward_id AND sk.supervisor_id = $2
+                   WHERE sk.kothi_id = e.kothi_id AND sk.supervisor_id = $2
                  )
                  OR EXISTS (
                    SELECT 1 FROM user_zone_access uz
@@ -2305,7 +2305,7 @@ router.post("/face-attendance", upload.single("image"), async (req, res) => {
             );
             if (rosterCheck.rowCount === 0) {
               console.warn(`[Group] Roster FAILED emp_id=${employeeRecord.emp_id} supervisor=${supervisorId}`);
-              return { faceIndex, status: "skipped", similarity, employeeId: employeeRecord.emp_id, employeeName: employeeRecord.name, message: "Employee does not belong to this supervisor's ward.", code: "UNAUTHORIZED_WARD" };
+              return { faceIndex, status: "skipped", similarity, employeeId: employeeRecord.emp_id, employeeName: employeeRecord.name, message: "Employee does not belong to this supervisor's kothi.", code: "UNAUTHORIZED_WARD" };
             }
           }
 
@@ -2411,7 +2411,7 @@ router.post("/face-attendance", upload.single("image"), async (req, res) => {
 
     const requestedEmpId = normalizeId(rawEmpId ?? rawEmployeeId);
     const individualTrackingCityId = await resolveRequestCityId({
-      wardId,
+      kothiId,
       supervisorId,
       employeeId: requestedEmpId,
     });
@@ -2573,14 +2573,14 @@ router.post("/face-attendance", upload.single("image"), async (req, res) => {
     }
 
     // ?? COST OPT: Individual fallback roster loop is DISABLED by default.
-    // This path calls CompareFaces for every employee in the ward � very expensive.
+    // This path calls CompareFaces for every employee in the kothi � very expensive.
     // Collection search missing = face likely not enrolled. Return clear error instead.
     // Enable via INDIVIDUAL_FALLBACK_ENABLED=true in .env ONLY for debugging.
     if (!matchedFace && INDIVIDUAL_FALLBACK_ENABLED) {
       const fallback = await fallbackMatchByCompare(
         normalizedCaptureBuffer,
         supervisorId,
-        wardId,
+        kothiId,
         matchThreshold
       );
       if (fallback?.employee && String(fallback.employee.emp_id) !== String(requestedEmpId)) {
@@ -2655,7 +2655,7 @@ router.post("/face-attendance", upload.single("image"), async (req, res) => {
     const geoCheck = await validateGeofencing(empId, locationPayload.latitude, locationPayload.longitude);
     if (!geoCheck.allowed) {
       if (geoCheck.notConfigured) {
-        // Geofencing rules not set up for this zone/ward yet
+        // Geofencing rules not set up for this zone/kothi yet
         return res.status(403).json({
           error: "Your geofencing location is not mapped yet",
           notConfigured: true,
@@ -2674,7 +2674,7 @@ router.post("/face-attendance", upload.single("image"), async (req, res) => {
       emp_id: empId,
       emp_code: employeeRecord.emp_code,
       employee_name: employeeRecord.name,
-      ward_name: attendance.ward_name ?? null,
+      kothi_name: attendance.kothi_name ?? null,
       zone_name: null,
       city_name: null,
     };
@@ -2786,7 +2786,7 @@ router.post("/face-liveness", upload.single("image"), async (req, res) => {
     };
 
     const livenessTrackingCityId = await resolveRequestCityId({
-      wardId,
+      kothiId,
       supervisorId,
       employeeId: normalizeId(rawEmpId ?? rawEmployeeId),
     });
@@ -3020,7 +3020,7 @@ router.get("/self/status", authenticate, async (req, res) => {
         punch_in_image: attendance.punch_in_image,
         mid_shift_punch_in_image: attendance.mid_shift_punch_in_image,
         punch_out_image: attendance.punch_out_image,
-        ward_id: attendance.ward_id,
+        kothi_id: attendance.kothi_id,
       }
       : null;
 
@@ -3031,7 +3031,7 @@ router.get("/self/status", authenticate, async (req, res) => {
         emp_code: resolved.employee.emp_code,
         name: resolved.employee.name,
         phone: resolved.employee.phone,
-        ward_id: resolved.employee.ward_id,
+        kothi_id: resolved.employee.kothi_id,
         face_enrolled: Boolean(resolved.employee.face_embedding),
         self_attendance_enabled: Boolean(
           resolved.employee.self_attendance_enabled
@@ -3472,24 +3472,24 @@ router.post("/mark-leave", authenticate, async (req, res) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    // If supervisor, ensure employee is in their wards
+    // If supervisor, ensure employee is in their kothis
     if (role !== "admin") {
       const wardCheck = await pool.query(
         `SELECT 1
          FROM employee e
-         LEFT JOIN wards w ON e.ward_id = w.ward_id
+         LEFT JOIN kothis w ON e.kothi_id = w.kothi_id
          WHERE e.emp_id = $2 AND (
            EXISTS (
              SELECT 1 FROM supervisor_ward sw
-             WHERE sw.ward_id = e.ward_id AND sw.supervisor_id = $1
+             WHERE sw.kothi_id = e.kothi_id AND sw.supervisor_id = $1
            )
            OR EXISTS (
              SELECT 1 FROM user_kothi_access uk
-             WHERE uk.ward_id = e.ward_id AND uk.user_id = $1
+             WHERE uk.kothi_id = e.kothi_id AND uk.user_id = $1
            )
            OR EXISTS (
              SELECT 1 FROM supervisor_kothi sk
-             WHERE sk.ward_id = e.ward_id AND sk.supervisor_id = $1
+             WHERE sk.kothi_id = e.kothi_id AND sk.supervisor_id = $1
            )
            OR EXISTS (
              SELECT 1 FROM user_zone_access uz
@@ -3517,9 +3517,9 @@ router.post("/mark-leave", authenticate, async (req, res) => {
       return res.status(200).json({ success: true, attendance_id: row.attendance_id, leave_type: row.leave_type });
     }
 
-    // fetch ward / zone / city so we never insert null ward_id
+    // fetch kothi / zone / city so we never insert null kothi_id
     const empMetaResult = await pool.query(
-      `SELECT e.emp_id, e.ward_id
+      `SELECT e.emp_id, e.kothi_id
        FROM employee e
        WHERE e.emp_id = $1
        LIMIT 1`,
@@ -3529,10 +3529,10 @@ router.post("/mark-leave", authenticate, async (req, res) => {
     if (!empMeta) {
       return res.status(404).json({ error: "Employee not found" });
     }
-    if (!empMeta.ward_id) {
+    if (!empMeta.kothi_id) {
       return res
         .status(400)
-        .json({ error: "Employee is missing ward assignment." });
+        .json({ error: "Employee is missing kothi assignment." });
     }
 
     let result;
@@ -3544,17 +3544,17 @@ router.post("/mark-leave", authenticate, async (req, res) => {
              leave_marked_at = NOW(),
              punch_in_time = NULL,
              punch_out_time = NULL,
-             ward_id = COALESCE(ward_id, $4)
+             kothi_id = COALESCE(kothi_id, $4)
          WHERE attendance_id = $3
          RETURNING *`,
-        [leaveType, user.user_id || null, row.attendance_id, empMeta.ward_id]
+        [leaveType, user.user_id || null, row.attendance_id, empMeta.kothi_id]
       );
     } else {
       result = await pool.query(
-        `INSERT INTO attendance (emp_id, ward_id, date, leave_type, leave_marked_by, leave_marked_at)
+        `INSERT INTO attendance (emp_id, kothi_id, date, leave_type, leave_marked_by, leave_marked_at)
          VALUES ($1, $2, $3, $4, $5, NOW())
          RETURNING *`,
-        [empId, empMeta.ward_id, targetDate, leaveType, user.user_id || null]
+        [empId, empMeta.kothi_id, targetDate, leaveType, user.user_id || null]
       );
     }
 
@@ -3585,19 +3585,19 @@ router.post("/unmark-leave", authenticate, async (req, res) => {
       const wardCheck = await pool.query(
         `SELECT 1
          FROM employee e
-         LEFT JOIN wards w ON e.ward_id = w.ward_id
+         LEFT JOIN kothis w ON e.kothi_id = w.kothi_id
          WHERE e.emp_id = $2 AND (
            EXISTS (
              SELECT 1 FROM supervisor_ward sw
-             WHERE sw.ward_id = e.ward_id AND sw.supervisor_id = $1
+             WHERE sw.kothi_id = e.kothi_id AND sw.supervisor_id = $1
            )
            OR EXISTS (
              SELECT 1 FROM user_kothi_access uk
-             WHERE uk.ward_id = e.ward_id AND uk.user_id = $1
+             WHERE uk.kothi_id = e.kothi_id AND uk.user_id = $1
            )
            OR EXISTS (
              SELECT 1 FROM supervisor_kothi sk
-             WHERE sk.ward_id = e.ward_id AND sk.supervisor_id = $1
+             WHERE sk.kothi_id = e.kothi_id AND sk.supervisor_id = $1
            )
            OR EXISTS (
              SELECT 1 FROM user_zone_access uz

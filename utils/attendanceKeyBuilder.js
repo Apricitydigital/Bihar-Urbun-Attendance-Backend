@@ -47,7 +47,7 @@ const buildAttendanceImagePath = ({
   empCode,
   empId,
   employeeName,
-  wardName,
+  kothiName,
   zoneName,
   cityName,
   address,
@@ -63,7 +63,7 @@ const buildAttendanceImagePath = ({
     empId ? `emp-${empId}` : "employee"
   );
 
-  const locationParts = [wardName, zoneName, cityName]
+  const locationParts = [kothiName, zoneName, cityName]
     .map((part) => (part ? part.toString().trim() : ""))
     .filter(Boolean);
 
@@ -104,12 +104,12 @@ const getAttendanceUploadContext = async (pool, attendanceId) => {
       e.emp_id,
       e.emp_code,
       e.name AS employee_name,
-      w.ward_name,
+      w.kothi_name,
       z.zone_name,
       c.city_name
     FROM attendance a
     JOIN employee e ON a.emp_id = e.emp_id
-    LEFT JOIN wards w ON e.ward_id = w.ward_id
+    LEFT JOIN kothis w ON e.kothi_id = w.kothi_id
     LEFT JOIN zones z ON w.zone_id = z.zone_id
     LEFT JOIN cities c ON z.city_id = c.city_id
     WHERE a.attendance_id = $1

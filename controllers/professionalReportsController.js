@@ -67,9 +67,9 @@ const getAttendanceList = async (req, res) => {
           pe.ward_id = $${paramCount}
           OR EXISTS (
             SELECT 1
-            FROM wards w_filter
-            WHERE w_filter.ward_id = $${paramCount}
-              AND w_filter.sector_id = pe.ward_id
+            FROM kothis w_filter
+            WHERE w_filter.kothi_id = pe.kothi_id
+              AND w_filter.ward_id = $${paramCount}
           )
         )
       `;
@@ -137,8 +137,8 @@ const getAttendanceList = async (req, res) => {
         leave_row.reviewed_at AS leave_reviewed_at,
         leave_reviewer.name AS leave_reviewed_by_name,
         pe.selfie_url as profile_selfie_url,
-        COALESCE(sec_req.sector_name, w_req.ward_name, sec.sector_name, w.ward_name) AS ward_name,
-        COALESCE(wk_req.ward_name, wk.ward_name) as kothi_name,
+        COALESCE(sec_req.ward_name, w_req.kothi_name, sec.ward_name, w.kothi_name) AS kothi_name,
+        COALESCE(wk_req.kothi_name, wk.kothi_name) as kothi_name,
         z.zone_name,
         c.city_name
       FROM professional_employees pe
@@ -163,12 +163,12 @@ const getAttendanceList = async (req, res) => {
       ) leave_row ON TRUE
       LEFT JOIN users leave_reviewer ON leave_reviewer.user_id = leave_row.reviewed_by
       LEFT JOIN self_punch_requests spr ON pe.request_id = spr.id
-      LEFT JOIN sectors sec_req ON spr.ward_id = sec_req.sector_id
-      LEFT JOIN wards w_req ON spr.ward_id = w_req.ward_id
-      LEFT JOIN wards wk_req ON spr.kothi_id = wk_req.ward_id
-      LEFT JOIN sectors sec ON pa.ward_id = sec.sector_id
-      LEFT JOIN wards w ON pa.ward_id = w.ward_id
-      LEFT JOIN wards wk ON pe.kothi_id = wk.ward_id
+      LEFT JOIN wards sec_req ON spr.kothi_id = sec_req.ward_id
+      LEFT JOIN kothis w_req ON spr.kothi_id = w_req.kothi_id
+      LEFT JOIN kothis wk_req ON spr.kothi_id = wk_req.kothi_id
+      LEFT JOIN wards sec ON pa.kothi_id = sec.ward_id
+      LEFT JOIN kothis w ON pa.kothi_id = w.kothi_id
+      LEFT JOIN kothis wk ON pe.kothi_id = wk.kothi_id
       JOIN zones z ON pe.zone_id = z.zone_id
       JOIN cities c ON pe.city_id = c.city_id
       WHERE 1=1 ${peFilters}
@@ -280,9 +280,9 @@ const getAttendanceSummary = async (req, res) => {
           pa.ward_id = $${paramCount}
           OR EXISTS (
             SELECT 1
-            FROM wards w_filter
-            WHERE w_filter.ward_id = $${paramCount}
-              AND w_filter.sector_id = pa.ward_id
+            FROM kothis w_filter
+            WHERE w_filter.kothi_id = pa.kothi_id
+              AND w_filter.ward_id = $${paramCount}
           )
         )
       `;
@@ -308,20 +308,20 @@ const getAttendanceSummary = async (req, res) => {
     
     if (city_id) { peParamCount++; peFilters += ` AND pe.city_id = $${peParamCount}`; peParams.push(city_id); }
     if (zone_id) { peParamCount++; peFilters += ` AND pe.zone_id = $${peParamCount}`; peParams.push(zone_id); }
-    if (ward_id) {
+    if (kothi_id) {
       peParamCount++;
       peFilters += `
         AND (
-          pe.ward_id = $${peParamCount}
+          pe.kothi_id = $${peParamCount}
           OR EXISTS (
             SELECT 1
-            FROM wards w_filter
-            WHERE w_filter.ward_id = $${peParamCount}
-              AND w_filter.sector_id = pe.ward_id
+            FROM kothis w_filter
+            WHERE w_filter.kothi_id = $${peParamCount}
+              AND w_filter.ward_id = pe.kothi_id
           )
         )
       `;
-      peParams.push(ward_id);
+      peParams.push(kothi_id);
     }
     if (kothi_id) { peParamCount++; peFilters += ` AND pe.kothi_id = $${peParamCount}`; peParams.push(kothi_id); }
     if (professional_id) { peParamCount++; peFilters += ` AND pe.id = $${peParamCount}`; peParams.push(professional_id); }
@@ -331,23 +331,23 @@ const getAttendanceSummary = async (req, res) => {
       SELECT COUNT(*) as total FROM professional_employees pe WHERE 1=1 ${peFilters}
     `;
 
-    // By Ward Aggregation
+    // By Kothi Aggregation
     const aggQuery = `
       ${cte}
       SELECT
-        COALESCE(sec_req.sector_name, w_req.ward_name, sec.sector_name, w.ward_name) AS ward_name,
+        COALESCE(sec_req.ward_name, w_req.kothi_name, sec.ward_name, w.kothi_name) AS kothi_name,
         COUNT(DISTINCT pa.professional_id) as unique_professionals_present,
         COUNT(pa.id) as total_present_days
       FROM professional_attendance pa
       JOIN professional_employees pe ON pa.professional_id = pe.id
       LEFT JOIN self_punch_requests spr ON pe.request_id = spr.id
-      LEFT JOIN sectors sec_req ON spr.ward_id = sec_req.sector_id
-      LEFT JOIN wards w_req ON spr.ward_id = w_req.ward_id
-      LEFT JOIN sectors sec ON pa.ward_id = sec.sector_id
-      LEFT JOIN wards w ON pa.ward_id = w.ward_id
+      LEFT JOIN wards sec_req ON spr.kothi_id = sec_req.ward_id
+      LEFT JOIN kothis w_req ON spr.kothi_id = w_req.kothi_id
+      LEFT JOIN wards sec ON pa.kothi_id = sec.ward_id
+      LEFT JOIN kothis w ON pa.kothi_id = w.kothi_id
       WHERE 1=1 ${filters}
-      GROUP BY COALESCE(sec_req.sector_name, w_req.ward_name, sec.sector_name, w.ward_name)
-      ORDER BY COALESCE(sec_req.sector_name, w_req.ward_name, sec.sector_name, w.ward_name) ASC
+      GROUP BY COALESCE(sec_req.ward_name, w_req.kothi_name, sec.ward_name, w.kothi_name)
+      ORDER BY COALESCE(sec_req.ward_name, w_req.kothi_name, sec.ward_name, w.kothi_name) ASC
     `;
 
     const presentProfessionalsQuery = `
@@ -443,9 +443,9 @@ const getDateRangeAttendanceSummary = async (req, res) => {
           pe.ward_id = $${paramCount}
           OR EXISTS (
             SELECT 1
-            FROM wards w_filter
-            WHERE w_filter.ward_id = $${paramCount}
-              AND w_filter.sector_id = pe.ward_id
+            FROM kothis w_filter
+            WHERE w_filter.kothi_id = pe.kothi_id
+              AND w_filter.ward_id = $${paramCount}
           )
         )
       `;
@@ -474,8 +474,8 @@ const getDateRangeAttendanceSummary = async (req, res) => {
         pe.emp_code,
         pe.mobile,
         pe.email,
-        COALESCE(sec_req.sector_name, w_req.ward_name, sec.sector_name, w.ward_name) AS ward_name,
-        COALESCE(wk_req.ward_name, wk.ward_name) as kothi_name,
+        COALESCE(sec_req.ward_name, w_req.kothi_name, sec.ward_name, w.kothi_name) AS kothi_name,
+        COALESCE(wk_req.kothi_name, wk.kothi_name) as kothi_name,
         z.zone_name,
         c.city_name,
 
@@ -545,7 +545,7 @@ const getDateRangeAttendanceSummary = async (req, res) => {
           AND h.holiday_date <= $${endParam}
           AND h.city_id = pe.city_id
           AND (h.zone_id IS NULL OR h.zone_id = pe.zone_id)
-          AND (h.ward_id IS NULL OR h.ward_id = pe.ward_id)
+          AND (h.kothi_id IS NULL OR h.kothi_id = pe.kothi_id)
           AND (h.kothi_id IS NULL OR h.kothi_id = pe.kothi_id)
           AND NOT EXISTS (
             SELECT 1
@@ -555,16 +555,16 @@ const getDateRangeAttendanceSummary = async (req, res) => {
           )
       ) holiday_agg ON TRUE
       LEFT JOIN self_punch_requests spr ON pe.request_id = spr.id
-      LEFT JOIN sectors sec_req ON spr.ward_id = sec_req.sector_id
-      LEFT JOIN wards w_req ON spr.ward_id = w_req.ward_id
-      LEFT JOIN wards wk_req ON spr.kothi_id = wk_req.ward_id
-      LEFT JOIN sectors sec ON pe.ward_id = sec.sector_id
-      LEFT JOIN wards w ON pe.ward_id = w.ward_id
-      LEFT JOIN wards wk ON pe.kothi_id = wk.ward_id
+      LEFT JOIN wards sec_req ON spr.kothi_id = sec_req.ward_id
+      LEFT JOIN kothis w_req ON spr.kothi_id = w_req.kothi_id
+      LEFT JOIN kothis wk_req ON spr.kothi_id = wk_req.kothi_id
+      LEFT JOIN wards sec ON pe.kothi_id = sec.ward_id
+      LEFT JOIN kothis w ON pe.kothi_id = w.kothi_id
+      LEFT JOIN kothis wk ON pe.kothi_id = wk.kothi_id
       WHERE 1=1 ${peFilters}
       GROUP BY pe.id, pe.full_name, pe.emp_code, pe.mobile, pe.email,
-               COALESCE(sec_req.sector_name, w_req.ward_name, sec.sector_name, w.ward_name),
-               COALESCE(wk_req.ward_name, wk.ward_name),
+               COALESCE(sec_req.ward_name, w_req.kothi_name, sec.ward_name, w.kothi_name),
+               COALESCE(wk_req.kothi_name, wk.kothi_name),
                z.zone_name, c.city_name,
                leave_agg.leave_days, leave_agg.latest_reviewer_name,
                weekoff_agg.week_off_count, holiday_agg.holiday_days
@@ -707,8 +707,8 @@ const getDateRangeAttendanceDetails = async (req, res) => {
         plr.review_note AS leave_review_note,
         plr.reviewed_at AS leave_reviewed_at,
         leave_reviewer.name AS leave_reviewed_by_name,
-        COALESCE(sec_req.sector_name, w_req.ward_name, sec.sector_name, w.ward_name) AS ward_name,
-        COALESCE(wk_req.ward_name, wk.ward_name) as kothi_name,
+        COALESCE(sec_req.ward_name, w_req.kothi_name, sec.ward_name, w.kothi_name) AS kothi_name,
+        COALESCE(wk_req.kothi_name, wk.kothi_name) as kothi_name,
         z.zone_name,
         c.city_name
       FROM calendar_days cd
@@ -721,12 +721,12 @@ const getDateRangeAttendanceDetails = async (req, res) => {
        AND plr.requested_date = cd.date
       LEFT JOIN users leave_reviewer ON leave_reviewer.user_id = plr.reviewed_by
       LEFT JOIN self_punch_requests spr ON pe.request_id = spr.id
-      LEFT JOIN sectors sec_req ON spr.ward_id = sec_req.sector_id
-      LEFT JOIN wards w_req ON spr.ward_id = w_req.ward_id
-      LEFT JOIN wards wk_req ON spr.kothi_id = wk_req.ward_id
-      LEFT JOIN sectors sec ON pe.ward_id = sec.sector_id
-      LEFT JOIN wards w ON pe.ward_id = w.ward_id
-      LEFT JOIN wards wk ON pe.kothi_id = wk.ward_id
+      LEFT JOIN wards sec_req ON spr.kothi_id = sec_req.ward_id
+      LEFT JOIN kothis w_req ON spr.kothi_id = w_req.kothi_id
+      LEFT JOIN kothis wk_req ON spr.kothi_id = wk_req.kothi_id
+      LEFT JOIN wards sec ON pe.kothi_id = sec.ward_id
+      LEFT JOIN kothis w ON pe.kothi_id = w.kothi_id
+      LEFT JOIN kothis wk ON pe.kothi_id = wk.kothi_id
       JOIN zones z ON pe.zone_id = z.zone_id
       JOIN cities c ON pe.city_id = c.city_id
       ORDER BY cd.date DESC, pa.punch_in DESC NULLS LAST
@@ -792,12 +792,12 @@ const getEmployeesList = async (req, res) => {
       ${cte}
       SELECT
         pe.id, pe.full_name as name, pe.emp_code, pe.mobile, pe.is_active, pe.face_locked, pe.created_at,
-        COALESCE(sec.sector_name, w.ward_name) AS ward_name, z.zone_name, c.city_name,
-        wk.ward_name as kothi_name
+        COALESCE(sec.ward_name, w.kothi_name) AS kothi_name, z.zone_name, c.city_name,
+        wk.kothi_name as kothi_name
       FROM professional_employees pe
-      LEFT JOIN sectors sec ON pe.ward_id = sec.sector_id
-      LEFT JOIN wards w ON pe.ward_id = w.ward_id
-      LEFT JOIN wards wk ON pe.kothi_id = wk.ward_id
+      LEFT JOIN wards sec ON pe.kothi_id = sec.ward_id
+      LEFT JOIN kothis w ON pe.kothi_id = w.kothi_id
+      LEFT JOIN kothis wk ON pe.kothi_id = wk.kothi_id
       JOIN zones z ON pe.zone_id = z.zone_id
       JOIN cities c ON pe.city_id = c.city_id
       WHERE 1=1 ${filters}

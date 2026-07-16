@@ -14,9 +14,8 @@ const fs = require("fs");
 
 const logError = (label, error) => {
   try {
-    const line = `[${new Date().toISOString()}] ${label}: ${
-      error?.stack || error?.message || error
-    }\n`;
+    const line = `[${new Date().toISOString()}] ${label}: ${error?.stack || error?.message || error
+      }\n`;
     fs.appendFileSync("supervisor_errors.log", line);
   } catch (_) {
     // ignore logging failures
@@ -25,7 +24,7 @@ const logError = (label, error) => {
 
 ensureSelfAttendanceSupport().catch((error) => {
   console.warn(
-    "Self attendance bootstrap skipped (supervisor wards):",
+    "Self attendance bootstrap skipped (supervisor kothis):",
     error?.message || error
   );
 });
@@ -149,8 +148,8 @@ const resolveKothiScope = (req) => {
   }
   const ids = Array.isArray(scope.ids)
     ? scope.ids
-        .map((wardId) => Number(wardId))
-        .filter((wardId) => Number.isFinite(wardId))
+      .map((kothiId) => Number(kothiId))
+      .filter((kothiId) => Number.isFinite(kothiId))
     : [];
   return ids.length > 0 ? ids : [];
 };
@@ -213,12 +212,12 @@ const mapRowsToWards = (rows) => {
   const wardMap = {};
 
   rows.forEach((row) => {
-    const wardId = row.ward_id;
+    const kothiId = row.kothi_id;
 
-    if (!wardMap[wardId]) {
-      wardMap[wardId] = {
-        ward_id: row.ward_id,
-        ward_name: row.ward_name,
+    if (!wardMap[kothiId]) {
+      wardMap[kothiId] = {
+        kothi_id: row.kothi_id,
+        kothi_name: row.kothi_name,
         city: row.city_name,
         zone: row.zone_name,
         employees: [],
@@ -242,7 +241,7 @@ const mapRowsToWards = (rows) => {
         ? Number(row.face_confidence)
         : null;
 
-    wardMap[wardId].employees.push({
+    wardMap[kothiId].employees.push({
       emp_id: row.emp_id,
       emp_name: row.employee_name,
       emp_code: row.emp_code,
@@ -305,11 +304,22 @@ const EMPTY_SUMMARY = {
   marked: 0,
   fullyMarked: 0,
   inProgress: 0,
+  midShiftPunchIn: 0,
   onLeave: 0,
   notMarked: 0,
   attendanceRate: 0,
 };
 
+const calculatePercentageChange = (today, yesterday) => {
+  if (yesterday === 0) {
+    if (today === 0) return 0;
+    return 100;
+  }
+
+  return Number(
+    ((((today - yesterday) / yesterday) * 100)).toFixed(1)
+  );
+};
 const fetchSupervisorSummary = async (
   userId,
   cityId,
@@ -333,7 +343,7 @@ const fetchSupervisorSummary = async (
         hasKothiFilter = true;
       } else {
         // If the supervisor has no assignments, return empty summary directly
-        console.log(`[DEBUG] fetchSupervisorSummary: supervisor ${userId} has no assigned wards. Returning empty.`);
+        console.log(`[DEBUG] fetchSupervisorSummary: supervisor ${userId} has no assigned kothis. Returning empty.`);
         return EMPTY_SUMMARY;
       }
     } catch (scopeError) {
@@ -356,12 +366,15 @@ const fetchSupervisorSummary = async (
 
   if (hasKothiFilter) {
     params.push(kothiIds);
-    baseFilters.push(`w.ward_id = ANY($${params.length}::int[])`);
+    baseFilters.push(`w.kothi_id = ANY($${params.length}::int[])`);
   }
 
   const startParam = params.length + 1;
   const endParam = params.length + 2;
+  const yesterday = new Date(startDate);
+  yesterday.setDate(yesterday.getDate() - 1);
 
+  const yesterdayDate = yesterday.toISOString().split("T")[0];
   const whereClause =
     baseFilters.length > 0 ? `WHERE ${baseFilters.join(" AND ")}` : "";
 
@@ -369,7 +382,7 @@ const fetchSupervisorSummary = async (
     WITH scoped_employees AS (
       SELECT DISTINCT e.emp_id
       FROM employee e
-      JOIN wards w ON e.ward_id = w.ward_id
+      JOIN kothis w ON e.kothi_id = w.kothi_id
       JOIN zones z ON w.zone_id = z.zone_id
       JOIN cities c ON z.city_id = c.city_id
       ${whereClause}
@@ -384,39 +397,70 @@ const fetchSupervisorSummary = async (
       FROM scoped_employees se
       LEFT JOIN attendance a
         ON a.emp_id = se.emp_id
-       AND a.date BETWEEN $${startParam}::date AND $${endParam}::date
+       AND a.date::date BETWEEN $${startParam}::date AND $${endParam}::date
       GROUP BY se.emp_id
     )
     SELECT
       (SELECT COUNT(*) FROM scoped_employees) AS total_employees,
       COALESCE(SUM(CASE WHEN has_punch_in = 1 THEN 1 ELSE 0 END), 0) AS present,
-      COALESCE(SUM(CASE WHEN has_leave = 1 THEN 1 ELSE 0 END), 0) AS on_leave,
+      /* Priority Rule: Count as on_leave only if leave is marked AND they did NOT punch in */
+      COALESCE(SUM(CASE WHEN has_leave = 1 AND has_punch_in = 0 THEN 1 ELSE 0 END), 0) AS on_leave,
       COALESCE(SUM(CASE WHEN has_punch_out = 1 THEN 1 ELSE 0 END), 0) AS fully_marked,
       COALESCE(SUM(CASE WHEN has_punch_in = 1 AND has_punch_out = 0 THEN 1 ELSE 0 END), 0) AS in_progress,
       COALESCE(SUM(CASE WHEN has_mid_shift_punch_in = 1 THEN 1 ELSE 0 END), 0) AS mid_shift_punch_in,
       GREATEST(
         (SELECT COUNT(*) FROM scoped_employees) -
         COALESCE(SUM(CASE WHEN has_punch_in = 1 THEN 1 ELSE 0 END), 0) -
-        COALESCE(SUM(CASE WHEN has_leave = 1 THEN 1 ELSE 0 END), 0),
+        COALESCE(SUM(CASE WHEN has_leave = 1 AND has_punch_in = 0 THEN 1 ELSE 0 END), 0),
         0
       ) AS not_marked
     FROM attendance_status;
   `;
 
-  params.push(startDate, endDate);
-  const result = await pool.query(summaryQuery, params);
+  // paramsYesterday.push(yesterdayDate, yesterdayDate);
+
+  // Today's parameters
+  const todayParams = [...params, startDate, endDate];
+
+  // Yesterday's parameters
+  const yesterdayParams = [...params, yesterdayDate, yesterdayDate];
+
+  // Run both queries together
+  const [result, yesterdayResult] = await Promise.all([
+    pool.query(summaryQuery, todayParams),
+    pool.query(summaryQuery, yesterdayParams),
+  ]);
   const row = result.rows[0] || {};
+  const y = yesterdayResult.rows[0] || {};
+
+  const yesterdaySummary = {
+    totalEmployees: Number(y.total_employees) || 0,
+    present: Number(y.present) || 0,
+    onLeave: Number(y.on_leave) || 0,
+    fullyMarked: Number(y.fully_marked) || 0,
+    midShiftPunchIn: Number(y.mid_shift_punch_in) || 0,
+    notMarked: Number(y.not_marked) || 0,
+  };
   const totalEmployees = Number(row.total_employees) || 0;
   const present = Number(row.present) || 0;
   const onLeave = Number(row.on_leave) || 0;
   const fullyMarked = Number(row.fully_marked) || 0;
   const inProgress = Number(row.in_progress) || 0;
+  // const midShiftPunchIn = Number(row.mid_shift_punch_in) || 0;
   const notMarked = Number(row.not_marked) || 0;
   const midShiftPunchIn = Number(row.mid_shift_punch_in) || 0;
   const attendanceRate =
     totalEmployees > 0
       ? Number((((present + onLeave) / totalEmployees) * 100).toFixed(1))
       : 0;
+  console.log("TODAY SUMMARY =", {
+    totalEmployees,
+    present,
+    onLeave,
+    fullyMarked,
+    midShiftPunchIn,
+    notMarked,
+  });
 
   let change = {};
   if (!options.skipYesterday) {
@@ -463,6 +507,7 @@ const fetchSupervisorSummary = async (
     marked: present,
     fullyMarked,
     inProgress,
+    midShiftPunchIn,
     onLeave,
     notMarked,
     attendanceRate,
@@ -494,7 +539,7 @@ const fetchSupervisorEmployees = async (
         hasKothiFilter = true;
       } else {
         // If the supervisor has no assignments, return empty list directly
-        console.log(`[DEBUG] fetchSupervisorEmployees: supervisor ${userId} has no assigned wards. Returning empty.`);
+        console.log(`[DEBUG] fetchSupervisorEmployees: supervisor ${userId} has no assigned kothis. Returning empty.`);
         return [];
       }
     } catch (scopeError) {
@@ -517,7 +562,7 @@ const fetchSupervisorEmployees = async (
   ];
   const zoneFilterSql = hasZoneFilter ? "AND z.zone_id = ANY($6::int[])" : "";
   const kothiFilterSql = hasKothiFilter
-    ? `AND w.ward_id = ANY($${hasZoneFilter ? 7 : 6}::int[])`
+    ? `AND w.kothi_id = ANY($${hasZoneFilter ? 7 : 6}::int[])`
     : "";
   if (hasZoneFilter) params.push(zoneIds);
   if (hasKothiFilter) params.push(kothiIds);
@@ -529,8 +574,8 @@ const fetchSupervisorEmployees = async (
         e.name AS employee_name,
         e.emp_code,
         e.phone,
-        w.ward_id,
-        w.ward_name,
+        w.kothi_id,
+        w.kothi_name,
         z.zone_id,
         z.zone_name,
         c.city_id,
@@ -542,7 +587,7 @@ const fetchSupervisorEmployees = async (
         e.face_id,
         e.self_attendance_enabled
       FROM employee e
-      JOIN wards w ON e.ward_id = w.ward_id
+      JOIN kothis w ON e.kothi_id = w.kothi_id
       JOIN zones z ON w.zone_id = z.zone_id
       JOIN cities c ON z.city_id = c.city_id
       LEFT JOIN designation d ON e.designation_id = d.designation_id
@@ -556,14 +601,41 @@ const fetchSupervisorEmployees = async (
     attendance_summary AS (
       SELECT
         a.emp_id,
-        MAX(CASE WHEN (a.punch_in_time IS NOT NULL OR a.mid_shift_punch_in_time IS NOT NULL) THEN 1 ELSE 0 END) AS has_punch_in,
-        MAX(CASE WHEN a.mid_shift_punch_in_time IS NOT NULL THEN 1 ELSE 0 END) AS has_mid_shift_punch_in,
-        MAX(CASE WHEN (a.punch_in_time IS NOT NULL OR a.mid_shift_punch_in_time IS NOT NULL) THEN 1 ELSE 0 END) AS has_punch_start,
-        MAX(CASE WHEN a.leave_type IS NOT NULL THEN 1 ELSE 0 END) AS has_leave,
+       MAX(
+    CASE
+        WHEN (a.punch_in_time IS NOT NULL OR a.mid_shift_punch_in_time IS NOT NULL)
+        THEN 1
+        ELSE 0
+    END
+) AS has_punch_in,
+
+MAX(
+    CASE
+        WHEN a.mid_shift_punch_in_time IS NOT NULL
+        THEN 1
+        ELSE 0
+    END
+) AS has_mid_shift_punch_in,
+
+MAX(
+    CASE
+        WHEN (a.punch_in_time IS NOT NULL OR a.mid_shift_punch_in_time IS NOT NULL)
+        THEN 1
+        ELSE 0
+    END
+) AS has_punch_start,
+
+MAX(
+    CASE
+        WHEN a.leave_type IS NOT NULL
+        THEN 1
+        ELSE 0
+    END
+) AS has_leave,
         MAX(CASE WHEN a.punch_out_time IS NOT NULL THEN 1 ELSE 0 END) AS has_punch_out,
         STRING_AGG(DISTINCT a.leave_type, ', ') AS leave_type,
-        COUNT(DISTINCT a.date) FILTER (WHERE (a.punch_in_time IS NOT NULL OR a.mid_shift_punch_in_time IS NOT NULL)) AS days_present,
-        COUNT(DISTINCT a.date) FILTER (WHERE a.punch_out_time IS NOT NULL) AS days_marked,
+        COUNT(DISTINCT a.date::date) FILTER (WHERE (a.punch_in_time IS NOT NULL OR a.mid_shift_punch_in_time IS NOT NULL)) AS days_present,
+        COUNT(DISTINCT a.date::date) FILTER (WHERE a.punch_out_time IS NOT NULL) AS days_marked,
         MAX(a.punch_in_time) FILTER (WHERE a.punch_in_time IS NOT NULL) AS punch_in_time,
         MAX(a.mid_shift_punch_in_time) FILTER (WHERE a.mid_shift_punch_in_time IS NOT NULL) AS mid_shift_punch_in_time,
         MAX(a.punch_out_time) FILTER (WHERE a.punch_out_time IS NOT NULL) AS punch_out_time,
@@ -577,7 +649,7 @@ const fetchSupervisorEmployees = async (
         ) AS last_punch_time
       FROM attendance a
       JOIN scoped_employees se ON se.emp_id = a.emp_id
-      WHERE a.date BETWEEN $2::date AND $3::date
+      WHERE a.date::date BETWEEN $2::date AND $3::date
       GROUP BY a.emp_id
     )
     SELECT
@@ -586,17 +658,19 @@ const fetchSupervisorEmployees = async (
         SELECT STRING_AGG(su.name, ', ')
         FROM supervisor_ward sw2
         JOIN users su ON sw2.supervisor_id = su.user_id
-        WHERE sw2.ward_id = se.ward_id
+        WHERE sw2.kothi_id = se.kothi_id
       ) AS supervisor_name,
+      /* Priority Rule: Present / Punch Start takes absolute priority over Leave status */
       CASE
+        WHEN COALESCE(summary.has_punch_start, 0) = 1 AND COALESCE(summary.has_punch_out, 0) = 1 THEN 'Marked'
+        WHEN COALESCE(summary.has_punch_start, 0) = 1 THEN 'In Progress'
         WHEN COALESCE(summary.has_leave, 0) = 1 THEN 'Leave'
-        WHEN COALESCE(summary.has_punch_start, 0) = 0 THEN 'Not Marked'
-        WHEN COALESCE(summary.has_punch_out, 0) = 1 THEN 'Marked'
-        ELSE 'In Progress'
+        ELSE 'Not Marked'
       END AS attendance_status,
       summary.leave_type AS leave_type,
       COALESCE(summary.days_present, 0) AS days_present,
       COALESCE(summary.days_marked, 0) AS days_marked,
+      summary.leave_type,
       summary.has_punch_in,
       summary.has_mid_shift_punch_in,
       summary.has_punch_start,
@@ -623,7 +697,7 @@ const fetchSupervisorEmployees = async (
       ) AS last_punch_epoch
     FROM scoped_employees se
     LEFT JOIN attendance_summary summary ON summary.emp_id = se.emp_id
-    ORDER BY se.emp_id, se.ward_id, se.employee_name;
+    ORDER BY se.emp_id, se.kothi_id, se.employee_name;
   `;
 
   const result = await pool.query(query, params);
@@ -658,7 +732,7 @@ const fetchCitySummary = async (
         hasKothiFilter = true;
       } else {
         // If the supervisor has no assignments, return empty summary directly
-        console.log(`[DEBUG] fetchCitySummary: supervisor ${userId} has no assigned wards. Returning empty.`);
+        console.log(`[DEBUG] fetchCitySummary: supervisor ${userId} has no assigned kothis. Returning empty.`);
         return [];
       }
     } catch (scopeError) {
@@ -678,13 +752,13 @@ const fetchCitySummary = async (
         c.city_id,
         c.city_name
       FROM employee e
-      JOIN wards w ON e.ward_id = w.ward_id
+      JOIN kothis w ON e.kothi_id = w.kothi_id
       JOIN zones z ON w.zone_id = z.zone_id
       JOIN cities c ON z.city_id = c.city_id
       WHERE ($4::int IS NULL OR c.city_id = $4::int)
         AND ($1::int IS NULL OR $1::int IS NOT NULL)
         ${hasZoneFilter ? "AND z.zone_id = ANY($5::int[])" : ""}
-        ${hasKothiFilter ? `AND w.ward_id = ANY($${hasZoneFilter ? 6 : 5}::int[])` : ""}
+        ${hasKothiFilter ? `AND w.kothi_id = ANY($${hasZoneFilter ? 6 : 5}::int[])` : ""}
     ),
     attendance_status AS (
       SELECT
@@ -705,13 +779,14 @@ const fetchCitySummary = async (
       city_name,
       COUNT(*) AS total_employees,
       COALESCE(SUM(CASE WHEN has_punch_in = 1 THEN 1 ELSE 0 END), 0) AS present,
-      COALESCE(SUM(CASE WHEN has_leave = 1 THEN 1 ELSE 0 END), 0) AS on_leave,
+      /* Priority Rule: Count under leave ONLY if they did not punch in (Present takes priority) */
+      COALESCE(SUM(CASE WHEN has_leave = 1 AND has_punch_in = 0 THEN 1 ELSE 0 END), 0) AS on_leave,
       COALESCE(SUM(CASE WHEN has_punch_out = 1 THEN 1 ELSE 0 END), 0) AS fully_marked,
       COALESCE(SUM(CASE WHEN has_punch_in = 1 AND has_punch_out = 0 THEN 1 ELSE 0 END), 0) AS in_progress,
       GREATEST(
         COUNT(*) -
         COALESCE(SUM(CASE WHEN has_punch_in = 1 THEN 1 ELSE 0 END), 0) -
-        COALESCE(SUM(CASE WHEN has_leave = 1 THEN 1 ELSE 0 END), 0),
+        COALESCE(SUM(CASE WHEN has_leave = 1 AND has_punch_in = 0 THEN 1 ELSE 0 END), 0),
         0
       ) AS not_marked
     FROM attendance_status
@@ -759,13 +834,13 @@ const fetchZoneSummary = async (
         z.zone_id,
         z.zone_name
       FROM employee e
-      JOIN wards w ON e.ward_id = w.ward_id
+      JOIN kothis w ON e.kothi_id = w.kothi_id
       JOIN zones z ON w.zone_id = z.zone_id
       JOIN cities c ON z.city_id = c.city_id
       WHERE ($4::int IS NULL OR c.city_id = $4::int)
         AND ($1::int IS NULL OR $1::int IS NOT NULL)
         ${hasZoneFilter ? "AND z.zone_id = ANY($5::int[])" : ""}
-        ${hasKothiFilter ? `AND w.ward_id = ANY($${hasZoneFilter ? 6 : 5}::int[])` : ""}
+        ${hasKothiFilter ? `AND w.kothi_id = ANY($${hasZoneFilter ? 6 : 5}::int[])` : ""}
     ),
     attendance_status AS (
       SELECT
@@ -786,10 +861,16 @@ const fetchZoneSummary = async (
       zone_name,
       COUNT(*) AS total_employees,
       COALESCE(SUM(CASE WHEN has_punch_in = 1 THEN 1 ELSE 0 END), 0) AS present,
-      COALESCE(SUM(CASE WHEN has_leave = 1 THEN 1 ELSE 0 END), 0) AS on_leave,
+      /* Priority Rule: Count under leave ONLY if they did not punch in (Present takes priority) */
+      COALESCE(SUM(CASE WHEN has_leave = 1 AND has_punch_in = 0 THEN 1 ELSE 0 END), 0) AS on_leave,
       COALESCE(SUM(CASE WHEN has_punch_out = 1 THEN 1 ELSE 0 END), 0) AS fully_marked,
       COALESCE(SUM(CASE WHEN has_punch_in = 1 AND has_punch_out = 0 THEN 1 ELSE 0 END), 0) AS in_progress,
-      GREATEST(COUNT(*) - COALESCE(SUM(CASE WHEN has_punch_in = 1 THEN 1 ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN has_leave = 1 THEN 1 ELSE 0 END), 0), 0) AS not_marked
+      GREATEST(
+        COUNT(*) - 
+        COALESCE(SUM(CASE WHEN has_punch_in = 1 THEN 1 ELSE 0 END), 0) - 
+        COALESCE(SUM(CASE WHEN has_leave = 1 AND has_punch_in = 0 THEN 1 ELSE 0 END), 0), 
+        0
+      ) AS not_marked
     FROM attendance_status
     GROUP BY zone_id, zone_name
     ORDER BY zone_name;
@@ -812,12 +893,13 @@ const fetchZoneSummary = async (
     inProgress: Number(row.in_progress) || 0,
     notMarked: Math.max(
       (Number(row.total_employees) || 0) -
-        (Number(row.present) || 0) -
-        (Number(row.on_leave) || 0),
+      (Number(row.present) || 0) -
+      (Number(row.on_leave) || 0),
       0
     ),
   }));
 };
+
 
 router.use(
   authenticate,
@@ -858,20 +940,20 @@ router.get("/summary", async (req, res) => {
   const allowedKothiIds = resolveKothiScope(req);
   const requestedZoneIds = parseIdList(
     req.query.zoneIds ||
-      req.query.zone_ids ||
-      req.query.zones ||
-      req.query.zoneId ||
-      req.query.zone_id
+    req.query.zone_ids ||
+    req.query.zones ||
+    req.query.zoneId ||
+    req.query.zone_id
   );
   const requestedKothiIds = parseIdList(
     req.query.kothiIds ||
-      req.query.kothi_ids ||
-      req.query.wardIds ||
-      req.query.ward_ids ||
-      req.query.kothiId ||
-      req.query.kothi_id ||
-      req.query.wardId ||
-      req.query.ward_id
+    req.query.kothi_ids ||
+    req.query.wardIds ||
+    req.query.ward_ids ||
+    req.query.kothiId ||
+    req.query.kothi_id ||
+    req.query.kothiId ||
+    req.query.kothi_id
   );
 
   // Use requested filters if provided, otherwise fall back to full allowed scope
@@ -960,13 +1042,14 @@ router.get("/", async (req, res) => {
     res.json({ success: true, data: response });
   } catch (error) {
     console.error("Error fetching employee data: ", error);
-    logError("wards-get", error);
+    logError("kothis-get", error);
     res.status(500).json({ success: false, error: "Internal Server Error" });
   }
 });
 
-// Return allowed kothi/ward list for the supervisor (used to populate filters)
+// Return allowed kothi/kothi list for the supervisor (used to populate filters)
 router.get("/kothi-list", async (req, res) => {
+  console.log("KOTHI LIST API HIT");
   const requestingUser = req.user;
   const isAdmin = requestingUser?.role === "admin";
   const effectiveUserId = isAdmin ? null : requestingUser?.user_id;
@@ -992,10 +1075,15 @@ router.get("/kothi-list", async (req, res) => {
 
   const allowedZoneIds = resolveZoneScope(req);
   const allowedKothiIds = resolveKothiScope(req);
+  console.log("========== KOTHI LIST DEBUG ==========");
+  console.log("Logged User:", req.user);
+  console.log("Allowed Zone IDs:", allowedZoneIds);
+  console.log("Allowed Kothi IDs:", allowedKothiIds);
+  console.log("======================================");
   const zoneFilter =
     allowedZoneIds.length > 0 ? "AND z.zone_id = ANY($2::int[])" : "";
   const kothiFilter =
-    allowedKothiIds.length > 0 ? "AND w.ward_id = ANY($3::int[])" : "";
+    allowedKothiIds.length > 0 ? "AND w.kothi_id = ANY($3::int[])" : "";
 
   try {
     const params = [scopedCityId ?? null];
@@ -1005,19 +1093,19 @@ router.get("/kothi-list", async (req, res) => {
     const { rows } = await pool.query(
       `
         SELECT DISTINCT
-          w.ward_id,
-          w.ward_name,
+          w.kothi_id,
+          w.kothi_name,
           z.zone_id,
           z.zone_name,
           c.city_id,
           c.city_name
-        FROM wards w
+        FROM kothis w
         JOIN zones z ON w.zone_id = z.zone_id
         JOIN cities c ON z.city_id = c.city_id
         WHERE ($1::int IS NULL OR c.city_id = $1::int)
           ${zoneFilter}
           ${kothiFilter}
-        ORDER BY w.ward_name ASC
+        ORDER BY w.kothi_name ASC
       `,
       params
     );
@@ -1078,8 +1166,8 @@ router.post("/city-summary", async (req, res) => {
       req.body?.ward_ids ||
       req.body?.kothiId ||
       req.body?.kothi_id ||
-      req.body?.wardId ||
-      req.body?.ward_id
+      req.body?.kothiId ||
+      req.body?.kothi_id
     );
 
     const zoneIds = requestedZoneIds.length > 0
@@ -1143,8 +1231,8 @@ router.post("/zone-summary", async (req, res) => {
       req.body?.ward_ids ||
       req.body?.kothiId ||
       req.body?.kothi_id ||
-      req.body?.wardId ||
-      req.body?.ward_id
+      req.body?.kothiId ||
+      req.body?.kothi_id
     );
 
     const zoneIds = requestedZoneIds.length > 0
@@ -1168,6 +1256,7 @@ router.post("/zone-summary", async (req, res) => {
     res.status(500).json({ success: false, error: "Internal Server Error" });
   }
 });
+
 
 // Summary endpoint for web compatibility (POST with explicit user_id)
 router.post("/summary", async (req, res) => {
@@ -1205,20 +1294,20 @@ router.post("/summary", async (req, res) => {
   const allowedKothiIds = resolveKothiScope(req);
   const requestedZoneIds = parseIdList(
     req.body?.zoneIds ||
-      req.body?.zone_ids ||
-      req.body?.zones ||
-      req.body?.zoneId ||
-      req.body?.zone_id
+    req.body?.zone_ids ||
+    req.body?.zones ||
+    req.body?.zoneId ||
+    req.body?.zone_id
   );
   const requestedKothiIds = parseIdList(
     req.body?.kothiIds ||
-      req.body?.kothi_ids ||
-      req.body?.wardIds ||
-      req.body?.ward_ids ||
-      req.body?.kothiId ||
-      req.body?.kothi_id ||
-      req.body?.wardId ||
-      req.body?.ward_id
+    req.body?.kothi_ids ||
+    req.body?.wardIds ||
+    req.body?.ward_ids ||
+    req.body?.kothiId ||
+    req.body?.kothi_id ||
+    req.body?.kothiId ||
+    req.body?.kothi_id
   );
 
   const zoneIds =
@@ -1294,20 +1383,20 @@ router.post("/", async (req, res) => {
 
   const requestedZoneIds = parseIdList(
     req.body?.zoneIds ||
-      req.body?.zone_ids ||
-      req.body?.zones ||
-      req.body?.zoneId ||
-      req.body?.zone_id
+    req.body?.zone_ids ||
+    req.body?.zones ||
+    req.body?.zoneId ||
+    req.body?.zone_id
   );
   const requestedKothiIds = parseIdList(
     req.body?.kothiIds ||
-      req.body?.kothi_ids ||
-      req.body?.wardIds ||
-      req.body?.ward_ids ||
-      req.body?.kothiId ||
-      req.body?.kothi_id ||
-      req.body?.wardId ||
-      req.body?.ward_id
+    req.body?.kothi_ids ||
+    req.body?.wardIds ||
+    req.body?.ward_ids ||
+    req.body?.kothiId ||
+    req.body?.kothi_id ||
+    req.body?.kothiId ||
+    req.body?.kothi_id
   );
 
   const zoneIds =
@@ -1335,7 +1424,7 @@ router.post("/", async (req, res) => {
     res.json({ success: true, data: response });
   } catch (error) {
     console.error("Error fetching employee data: ", error);
-    logError("wards-post", error);
+    logError("kothis-post", error);
     res.status(500).json({ success: false, error: "Internal Server Error" });
   }
 });
@@ -1379,10 +1468,10 @@ router.post("/top-supervisors", async (req, res) => {
       END AS attendance_rate
     FROM users u
     JOIN supervisor_ward sw ON sw.supervisor_id = u.user_id
-    JOIN wards w ON w.ward_id = sw.ward_id
+    JOIN kothis w ON w.kothi_id = sw.kothi_id
     JOIN zones z ON z.zone_id = w.zone_id
     JOIN cities c ON c.city_id = z.city_id
-    JOIN employee e ON e.ward_id = w.ward_id
+    JOIN employee e ON e.kothi_id = w.kothi_id
     LEFT JOIN attendance a
       ON a.emp_id = e.emp_id
      AND a.date::date BETWEEN $1::date AND $2::date
@@ -1424,7 +1513,7 @@ router.post("/attendance-trend", async (req, res) => {
 
   const { cityId: scopedCityId } = enforceCityScope(req, cityId ?? null);
   const { startDate, endDate } = resolveDateRange(startDateRaw, endDateRaw);
-  
+
   const effectiveUserId = isAdmin ? user_id : requestingUser?.user_id;
 
   const params = [startDate, endDate];
@@ -1433,13 +1522,13 @@ router.post("/attendance-trend", async (req, res) => {
     params.push(scopedCityId);
     filterClause += ` AND c.city_id = $${params.length}`;
   }
-  
+
   if (effectiveUserId) {
     params.push(effectiveUserId);
     filterClause += ` AND (
       sw.supervisor_id = $${params.length} OR
-      w.ward_id IN (SELECT ward_id FROM user_kothi_access WHERE user_id = $${params.length}) OR
-      w.ward_id IN (SELECT ward_id FROM supervisor_kothi WHERE supervisor_id = $${params.length}) OR
+      w.kothi_id IN (SELECT kothi_id FROM user_kothi_access WHERE user_id = $${params.length}) OR
+      w.kothi_id IN (SELECT kothi_id FROM supervisor_kothi WHERE supervisor_id = $${params.length}) OR
       w.zone_id IN (SELECT zone_id FROM user_zone_access WHERE user_id = $${params.length})
     )`;
   }
@@ -1451,10 +1540,10 @@ router.post("/attendance-trend", async (req, res) => {
     scoped_employees AS (
       SELECT DISTINCT e.emp_id
       FROM employee e
-      JOIN wards w ON e.ward_id = w.ward_id
+      JOIN kothis w ON e.kothi_id = w.kothi_id
       JOIN zones z ON w.zone_id = z.zone_id
       JOIN cities c ON z.city_id = c.city_id
-      LEFT JOIN supervisor_ward sw ON sw.ward_id = w.ward_id
+      LEFT JOIN supervisor_ward sw ON sw.kothi_id = w.kothi_id
       WHERE 1=1 ${filterClause}
     )
     SELECT

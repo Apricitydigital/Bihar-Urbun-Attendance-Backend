@@ -8,27 +8,27 @@ const { invalidateKothiAccessCache } = require("../utils/userKothiAccess");
 router.get("/", async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT s.assigned_id, s.supervisor_id as user_id, s.ward_id, u.emp_code, u.name, w.ward_name, z.zone_id, z.zone_name, c.city_id, c.city_name FROM supervisor_ward s JOIN users u ON s.supervisor_id = u.user_id JOIN wards w ON s.ward_id = w.ward_id JOIN zones z ON w.zone_id = z.zone_id JOIN cities c ON z.city_id = c.city_id ORDER BY u.emp_code;"
+      "SELECT s.assigned_id, s.supervisor_id as user_id, s.kothi_id, u.emp_code, u.name, w.kothi_name, z.zone_id, z.zone_name, c.city_id, c.city_name FROM supervisor_ward s JOIN users u ON s.supervisor_id = u.user_id JOIN kothis w ON s.kothi_id = w.kothi_id JOIN zones z ON w.zone_id = z.zone_id JOIN cities c ON z.city_id = c.city_id ORDER BY u.emp_code;"
     );
     res.json(result.rows);
   } catch (error) {
-    console.error("Error fetching Assigned wards: ", error);
+    console.error("Error fetching Assigned kothis: ", error);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
 
 // Update Existing Assignment record
 router.put("/:id", async (req, res) => {
-  const { user_id, ward_id } = req.body;
+  const { user_id, kothi_id } = req.body;
   const assigned_id = req.params.id;
 
-  if (!user_id || !ward_id) {
+  if (!user_id || !kothi_id) {
     return res.status(400).json({ error: "All fields are required" });
   }
   try {
     const result = await pool.query(
-      "UPDATE supervisor_ward SET supervisor_id = $1, ward_id = $2 WHERE assigned_id = $3 RETURNING *",
-      [user_id, ward_id, assigned_id]
+      "UPDATE supervisor_ward SET supervisor_id = $1, kothi_id = $2 WHERE assigned_id = $3 RETURNING *",
+      [user_id, kothi_id, assigned_id]
     );
 
     if (result.rowCount === 0) {
@@ -39,32 +39,32 @@ router.put("/:id", async (req, res) => {
     invalidateKothiAccessCache();
     res.json(result.rows[0]); // Send the updated record as a response
   } catch (error) {
-    console.error("Error updating Assigned ward: ", error);
+    console.error("Error updating Assigned kothi: ", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
 
 // Add new Assignment record
 router.post("/", async (req, res) => {
-  const { user_id, ward_id } = req.body;
-  if (!user_id || !ward_id) {
+  const { user_id, kothi_id } = req.body;
+  if (!user_id || !kothi_id) {
     return res.status(400).json({ error: "All fields are required" });
   }
   try {
     // Insert new assignment (multiple locations per supervisor allowed)
     const result = await pool.query(
-      `INSERT INTO supervisor_ward (supervisor_id, ward_id)
+      `INSERT INTO supervisor_ward (supervisor_id, kothi_id)
        VALUES ($1, $2)
-       ON CONFLICT (supervisor_id, ward_id) DO NOTHING
+       ON CONFLICT (supervisor_id, kothi_id) DO NOTHING
        RETURNING *`,
-      [user_id, ward_id]
+      [user_id, kothi_id]
     );
 
     if (result.rowCount === 0) {
       console.warn("Record exists, skipping");
       const existing = await pool.query(
-        `SELECT * FROM supervisor_ward WHERE supervisor_id = $1 AND ward_id = $2 LIMIT 1`,
-        [user_id, ward_id]
+        `SELECT * FROM supervisor_ward WHERE supervisor_id = $1 AND kothi_id = $2 LIMIT 1`,
+        [user_id, kothi_id]
       );
       invalidateCityAccessCache();
       invalidateKothiAccessCache();

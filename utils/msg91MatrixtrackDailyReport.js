@@ -62,7 +62,7 @@ const fetchCityReportData = async (date) => {
       COUNT(DISTINCT CASE WHEN a.punch_in_time IS NOT NULL THEN e.emp_id END) as present,
       COUNT(DISTINCT CASE WHEN a.leave_type IS NOT NULL THEN e.emp_id END) as on_leave
     FROM employee e
-    JOIN wards w ON e.ward_id = w.ward_id
+    JOIN kothis w ON e.kothi_id = w.kothi_id
     JOIN zones z ON w.zone_id = z.zone_id
     JOIN cities c ON z.city_id = c.city_id
     JOIN designation des ON e.designation_id = des.designation_id

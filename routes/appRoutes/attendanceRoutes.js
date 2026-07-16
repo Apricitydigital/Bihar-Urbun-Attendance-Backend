@@ -58,11 +58,11 @@ router.post("/", async (req, res) => {
               a.latitude_in, a.longitude_in, a.in_address, 
               a.latitude_out, a.longitude_out, a.out_address,
               e.emp_id, e.emp_code, e.name AS employee_name, 
-              d.designation_name, w.ward_id, w.ward_name
+              d.designation_name, w.kothi_id, w.kothi_name
        FROM attendance a
        JOIN employee e ON a.emp_id = e.emp_id
        JOIN designation d ON e.designation_id = d.designation_id
-       JOIN wards w ON e.ward_id = w.ward_id
+       JOIN kothis w ON e.kothi_id = w.kothi_id
        WHERE a.emp_id = $1 AND a.date = $2`,
       [emp_id, attendanceDate]
     );
@@ -70,12 +70,12 @@ router.post("/", async (req, res) => {
     let attendance;
 
     const wardDetail = await pool.query(
-      `SELECT ward_id from employee e where e.emp_id = $1`,
+      `SELECT kothi_id from employee e where e.emp_id = $1`,
       [emp_id]
     );
-    let ward_id;
+    let kothi_id;
     if (wardDetail.rows.length > 0) {
-      ward_id = wardDetail.rows[0].ward_id;
+      kothi_id = wardDetail.rows[0].kothi_id;
     }
 
     if (result.rows.length > 0) {
@@ -84,11 +84,11 @@ router.post("/", async (req, res) => {
     } else {
       // Create a new attendance record
       const insertResult = await pool.query(
-        `INSERT INTO attendance (emp_id, date, ward_id)
+        `INSERT INTO attendance (emp_id, date, kothi_id)
          VALUES ($1, CURRENT_DATE, $2)
          ON CONFLICT (emp_id, date) DO NOTHING
-         RETURNING attendance_id, date, ward_id`,
-        [emp_id, ward_id]
+         RETURNING attendance_id, date, kothi_id`,
+        [emp_id, kothi_id]
       );
 
       if (insertResult.rowCount === 0) {
@@ -99,7 +99,7 @@ router.post("/", async (req, res) => {
         insertResult.rows[0] ||
         (
           await pool.query(
-            `SELECT attendance_id, date, ward_id FROM attendance WHERE emp_id = $1 AND date = CURRENT_DATE LIMIT 1`,
+            `SELECT attendance_id, date, kothi_id FROM attendance WHERE emp_id = $1 AND date = CURRENT_DATE LIMIT 1`,
             [emp_id]
           )
         ).rows[0];
@@ -129,16 +129,16 @@ router.post("/", async (req, res) => {
         emp_code: null, // Fetching separately
         employee_name: null,
         designation_name: null,
-        ward_id: baseAttendance.ward_id,
-        ward_name: null,
+        kothi_id: baseAttendance.kothi_id,
+        kothi_name: null,
       };
 
       // Fetch employee details
       const empDetails = await pool.query(
-        `SELECT emp_code, name AS employee_name, d.designation_name, w.ward_id, w.ward_name
+        `SELECT emp_code, name AS employee_name, d.designation_name, w.kothi_id, w.kothi_name
          FROM employee e
          JOIN designation d ON e.designation_id = d.designation_id
-         JOIN wards w ON e.ward_id = w.ward_id
+         JOIN kothis w ON e.kothi_id = w.kothi_id
          WHERE e.emp_id = $1`,
         [emp_id]
       );
@@ -256,7 +256,7 @@ router.put("/", upload.single("image"), async (req, res) => {
           empCode: uploadContext?.emp_code,
           empId: uploadContext?.emp_id,
           employeeName: uploadContext?.employee_name,
-          wardName: uploadContext?.ward_name,
+          kothiName: uploadContext?.kothi_name,
           zoneName: uploadContext?.zone_name,
           cityName: uploadContext?.city_name,
           address,

@@ -142,7 +142,7 @@ const buildFaceImageUrlFromEmbedding = (embedding, empId) => {
   return faceImageUrl || embedding || null;
 };
 
-async function fetchSupervisorFaceGallery(supervisorId, wardId) {
+async function fetchSupervisorFaceGallery(supervisorId, kothiId) {
   const { rows } = await pool.query(
     `
       SELECT DISTINCT ON (e.emp_id)
@@ -152,28 +152,28 @@ async function fetchSupervisorFaceGallery(supervisorId, wardId) {
              e.face_embedding,
              e.face_id,
              e.face_confidence,
-             w.ward_id,
-             w.ward_name,
+             w.kothi_id,
+             w.kothi_name,
              z.zone_name,
              c.city_name
         FROM employee e
-        LEFT JOIN wards w ON e.ward_id = w.ward_id
+        LEFT JOIN kothis w ON e.kothi_id = w.kothi_id
         LEFT JOIN zones z ON w.zone_id = z.zone_id
         LEFT JOIN cities c ON z.city_id = c.city_id
        WHERE (e.face_embedding IS NOT NULL OR e.face_id IS NOT NULL)
-         AND ($2::int IS NULL OR w.ward_id = $2::int)
+         AND ($2::int IS NULL OR w.kothi_id = $2::int)
          AND (
            EXISTS (
              SELECT 1 FROM supervisor_ward sw
-             WHERE sw.ward_id = e.ward_id AND sw.supervisor_id = $1
+             WHERE sw.kothi_id = e.kothi_id AND sw.supervisor_id = $1
            )
            OR EXISTS (
              SELECT 1 FROM user_kothi_access uk
-             WHERE uk.ward_id = e.ward_id AND uk.user_id = $1
+             WHERE uk.kothi_id = e.kothi_id AND uk.user_id = $1
            )
            OR EXISTS (
              SELECT 1 FROM supervisor_kothi sk
-             WHERE sk.ward_id = e.ward_id AND sk.supervisor_id = $1
+             WHERE sk.kothi_id = e.kothi_id AND sk.supervisor_id = $1
            )
            OR EXISTS (
              SELECT 1 FROM user_zone_access uz
@@ -182,7 +182,7 @@ async function fetchSupervisorFaceGallery(supervisorId, wardId) {
          )
         ORDER BY e.emp_id
     `,
-    [supervisorId, wardId]
+    [supervisorId, kothiId]
   );
 
   const uniqueMap = new Map();
@@ -206,9 +206,9 @@ async function fetchSupervisorFaceGallery(supervisorId, wardId) {
       emp_code: row.emp_code,
       code: row.emp_code,
       identifier: row.emp_code || String(row.emp_id),
-      wardId: row.ward_id,
-      ward_id: row.ward_id,
-      wardName: row.ward_name,
+      kothiId: row.kothi_id,
+      kothi_id: row.kothi_id,
+      kothiName: row.kothi_name,
       zoneName: row.zone_name,
       cityName: row.city_name,
       faceId: row.face_id,
@@ -780,16 +780,16 @@ router.get("/gallery", async (req, res) => {
   // Use the dedicated POST /clear-cache endpoint to flush caches explicitly when needed.
 
   const supervisorId = resolveSupervisorIdFromQuery(req.query);
-  const wardId = normalizeId(req.query?.ward_id ?? req.query?.wardId ?? null);
+  const kothiId = normalizeId(req.query?.kothi_id ?? req.query?.kothiId ?? null);
 
   if (supervisorId !== null) {
     try {
-      const data = await fetchSupervisorFaceGallery(supervisorId, wardId);
+      const data = await fetchSupervisorFaceGallery(supervisorId, kothiId);
       return res.json({
         success: true,
         scope: "supervisor",
         supervisor_id: supervisorId,
-        ward_id: wardId,
+        kothi_id: kothiId,
         count: data.length,
         data,
       });

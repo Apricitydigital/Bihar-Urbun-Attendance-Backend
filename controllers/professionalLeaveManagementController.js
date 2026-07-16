@@ -67,12 +67,12 @@ const resolveHolidayAccessScope = async (req) => {
 
   if (kothiIds.length > 0) {
     const sectorRows = await pool.query(
-      `SELECT DISTINCT sector_id
-       FROM wards
-       WHERE ward_id = ANY($1::int[]) AND sector_id IS NOT NULL`,
+      `SELECT DISTINCT ward_id
+       FROM kothis
+       WHERE kothi_id = ANY($1::int[]) AND ward_id IS NOT NULL`,
       [kothiIds]
     );
-    sectorIds = toUniqueIntList(sectorRows.rows.map((row) => row.sector_id));
+    sectorIds = toUniqueIntList(sectorRows.rows.map((row) => row.ward_id));
   }
 
   return {
@@ -153,18 +153,18 @@ const getLeaveRequests = async (req, res) => {
         reviewer.name AS reviewed_by_name,
         c.city_name,
         z.zone_name,
-        COALESCE(sec_req.sector_name, w_req.ward_name, sec.sector_name, w.ward_name) AS ward_name,
-        COALESCE(wk_req.ward_name, wk.ward_name) AS kothi_name
+        COALESCE(sec_req.ward_name, w_req.kothi_name, sec.ward_name, w.kothi_name) AS kothi_name,
+        COALESCE(wk_req.kothi_name, wk.kothi_name) AS kothi_name
       FROM professional_leave_requests plr
       JOIN professional_employees pe ON pe.id = plr.professional_id
       LEFT JOIN users reviewer ON reviewer.user_id = plr.reviewed_by
       LEFT JOIN self_punch_requests spr ON pe.request_id = spr.id
-      LEFT JOIN sectors sec_req ON spr.ward_id = sec_req.sector_id
-      LEFT JOIN wards w_req ON spr.ward_id = w_req.ward_id
-      LEFT JOIN wards wk_req ON spr.kothi_id = wk_req.ward_id
-      LEFT JOIN sectors sec ON pe.ward_id = sec.sector_id
-      LEFT JOIN wards w ON pe.ward_id = w.ward_id
-      LEFT JOIN wards wk ON pe.kothi_id = wk.ward_id
+      LEFT JOIN wards sec_req ON spr.kothi_id = sec_req.ward_id
+      LEFT JOIN kothis w_req ON spr.kothi_id = w_req.kothi_id
+      LEFT JOIN kothis wk_req ON spr.kothi_id = wk_req.kothi_id
+      LEFT JOIN wards sec ON pe.kothi_id = sec.ward_id
+      LEFT JOIN kothis w ON pe.kothi_id = w.kothi_id
+      LEFT JOIN kothis wk ON pe.kothi_id = wk.kothi_id
       LEFT JOIN zones z ON pe.zone_id = z.zone_id
       LEFT JOIN cities c ON pe.city_id = c.city_id
       WHERE 1=1 ${filters}
@@ -419,18 +419,18 @@ const getHolidayCalendar = async (req, res) => {
         });
       }
 
-      const scopeClauses = ["(h.kothi_id IS NULL AND h.ward_id IS NULL AND h.zone_id IS NULL)"];
+      const scopeClauses = ["(h.kothi_id IS NULL AND h.kothi_id IS NULL AND h.zone_id IS NULL)"];
       if (holidayScope.kothiIds.length > 0) {
         params.push(holidayScope.kothiIds);
         scopeClauses.push(`(h.kothi_id IS NOT NULL AND h.kothi_id = ANY($${params.length}::int[]))`);
       }
       if (holidayScope.sectorIds.length > 0) {
         params.push(holidayScope.sectorIds);
-        scopeClauses.push(`(h.kothi_id IS NULL AND h.ward_id IS NOT NULL AND h.ward_id = ANY($${params.length}::int[]))`);
+        scopeClauses.push(`(h.kothi_id IS NULL AND h.kothi_id IS NOT NULL AND h.kothi_id = ANY($${params.length}::int[]))`);
       }
       if (holidayScope.zoneIds.length > 0) {
         params.push(holidayScope.zoneIds);
-        scopeClauses.push(`(h.kothi_id IS NULL AND h.ward_id IS NULL AND h.zone_id IS NOT NULL AND h.zone_id = ANY($${params.length}::int[]))`);
+        scopeClauses.push(`(h.kothi_id IS NULL AND h.kothi_id IS NULL AND h.zone_id IS NOT NULL AND h.zone_id = ANY($${params.length}::int[]))`);
       }
       filters += ` AND (${scopeClauses.join(" OR ")})`;
     }
@@ -445,17 +445,17 @@ const getHolidayCalendar = async (req, res) => {
         c.city_name,
         h.zone_id,
         z.zone_name,
-        h.ward_id,
-        sec.sector_name AS ward_name,
         h.kothi_id,
-        wk.ward_name AS kothi_name,
+        sec.ward_name AS kothi_name,
+        h.kothi_id,
+        wk.kothi_name AS kothi_name,
         h.created_at,
         creator.name AS created_by_name
       FROM professional_holidays h
       LEFT JOIN cities c ON c.city_id = h.city_id
       LEFT JOIN zones z ON z.zone_id = h.zone_id
-      LEFT JOIN sectors sec ON sec.sector_id = h.ward_id
-      LEFT JOIN wards wk ON wk.ward_id = h.kothi_id
+      LEFT JOIN wards sec ON sec.ward_id = h.kothi_id
+      LEFT JOIN kothis wk ON wk.kothi_id = h.kothi_id
       LEFT JOIN users creator ON creator.user_id = h.created_by
       ${filters}
       ORDER BY h.holiday_date DESC, h.created_at DESC
@@ -520,13 +520,13 @@ const createHoliday = async (req, res) => {
   const cityId = Number(city_id);
   let zoneId = zone_id ? Number(zone_id) : null;
   let wardId = ward_id ? Number(ward_id) : null;
-  const kothiId = kothi_id ? Number(kothi_id) : null;
+  let kothiId = kothi_id ? Number(kothi_id) : null;
 
   try {
     await ensureProfessionalLeaveSchema();
     const holidayScope = await resolveHolidayAccessScope(req);
 
-    if (!holidayScope.isAdmin && !zoneId && !wardId && !kothiId) {
+    if (!holidayScope.isAdmin && !zoneId && !kothiId && !kothiId) {
       const [totalZonesResult, allowedZonesResult] = await Promise.all([
         pool.query(`SELECT COUNT(*)::int AS total FROM zones WHERE city_id = $1`, [cityId]),
         holidayScope.zoneIds.length > 0
@@ -549,8 +549,8 @@ const createHoliday = async (req, res) => {
     if (!holidayScope.isAdmin && zoneId && !holidayScope.zoneIds.includes(zoneId)) {
       return res.status(403).json({ success: false, message: "No access to selected zone." });
     }
-    if (!holidayScope.isAdmin && wardId && !holidayScope.sectorIds.includes(wardId)) {
-      return res.status(403).json({ success: false, message: "No access to selected ward." });
+    if (!holidayScope.isAdmin && kothiId && !holidayScope.sectorIds.includes(kothiId)) {
+      return res.status(403).json({ success: false, message: "No access to selected kothi." });
     }
     if (!holidayScope.isAdmin && kothiId && !holidayScope.kothiIds.includes(kothiId)) {
       return res.status(403).json({ success: false, message: "No access to selected kothi." });
@@ -567,24 +567,24 @@ const createHoliday = async (req, res) => {
       }
     }
 
-    if (wardId && Number.isInteger(wardId)) {
+    if (kothiId && Number.isInteger(kothiId)) {
       const wardResult = await pool.query(
-        `SELECT s.sector_id, s.zone_id, z.city_id
-         FROM sectors s
+        `SELECT s.ward_id, s.zone_id, z.city_id
+         FROM wards s
          JOIN zones z ON z.zone_id = s.zone_id
-         WHERE s.sector_id = $1
+         WHERE s.ward_id = $1
          LIMIT 1`,
-        [wardId]
+        [kothiId]
       );
       const wardRow = wardResult.rows[0];
       if (!wardRow) {
-        return res.status(400).json({ success: false, message: "Selected ward is invalid." });
+        return res.status(400).json({ success: false, message: "Selected kothi is invalid." });
       }
       if (Number(wardRow.city_id) !== cityId) {
-        return res.status(400).json({ success: false, message: "Selected ward does not belong to selected city." });
+        return res.status(400).json({ success: false, message: "Selected kothi does not belong to selected city." });
       }
       if (zoneId && Number(wardRow.zone_id) !== zoneId) {
-        return res.status(400).json({ success: false, message: "Selected ward does not belong to selected zone." });
+        return res.status(400).json({ success: false, message: "Selected kothi does not belong to selected zone." });
       }
       if (!zoneId) {
         zoneId = Number(wardRow.zone_id);
@@ -593,10 +593,10 @@ const createHoliday = async (req, res) => {
 
     if (kothiId && Number.isInteger(kothiId)) {
       const kothiResult = await pool.query(
-        `SELECT w.ward_id, w.zone_id, w.sector_id, z.city_id
-         FROM wards w
+        `SELECT w.kothi_id, w.zone_id, w.ward_id, z.city_id
+         FROM kothis w
          JOIN zones z ON z.zone_id = w.zone_id
-         WHERE w.ward_id = $1
+         WHERE w.kothi_id = $1
          LIMIT 1`,
         [kothiId]
       );
@@ -610,14 +610,14 @@ const createHoliday = async (req, res) => {
       if (zoneId && Number(kothiRow.zone_id) !== zoneId) {
         return res.status(400).json({ success: false, message: "Selected kothi does not belong to selected zone." });
       }
-      if (wardId && Number(kothiRow.sector_id || 0) !== wardId) {
-        return res.status(400).json({ success: false, message: "Selected kothi does not belong to selected ward." });
+      if (kothiId && Number(kothiRow.ward_id || 0) !== kothiId) {
+        return res.status(400).json({ success: false, message: "Selected kothi does not belong to selected kothi." });
       }
       if (!zoneId) {
         zoneId = Number(kothiRow.zone_id);
       }
-      if (!wardId && Number.isInteger(Number(kothiRow.sector_id))) {
-        wardId = Number(kothiRow.sector_id);
+      if (!kothiId && Number.isInteger(Number(kothiRow.ward_id))) {
+        kothiId = Number(kothiRow.ward_id);
       }
     }
 
@@ -860,18 +860,18 @@ const getHolidayLogs = async (req, res) => {
         });
       }
 
-      const scopeClauses = ["(l.kothi_id IS NULL AND l.ward_id IS NULL AND l.zone_id IS NULL)"];
+      const scopeClauses = ["(l.kothi_id IS NULL AND l.kothi_id IS NULL AND l.zone_id IS NULL)"];
       if (holidayScope.kothiIds.length > 0) {
         params.push(holidayScope.kothiIds);
         scopeClauses.push(`(l.kothi_id IS NOT NULL AND l.kothi_id = ANY($${params.length}::int[]))`);
       }
       if (holidayScope.sectorIds.length > 0) {
         params.push(holidayScope.sectorIds);
-        scopeClauses.push(`(l.kothi_id IS NULL AND l.ward_id IS NOT NULL AND l.ward_id = ANY($${params.length}::int[]))`);
+        scopeClauses.push(`(l.kothi_id IS NULL AND l.kothi_id IS NOT NULL AND l.kothi_id = ANY($${params.length}::int[]))`);
       }
       if (holidayScope.zoneIds.length > 0) {
         params.push(holidayScope.zoneIds);
-        scopeClauses.push(`(l.kothi_id IS NULL AND l.ward_id IS NULL AND l.zone_id IS NOT NULL AND l.zone_id = ANY($${params.length}::int[]))`);
+        scopeClauses.push(`(l.kothi_id IS NULL AND l.kothi_id IS NULL AND l.zone_id IS NOT NULL AND l.zone_id = ANY($${params.length}::int[]))`);
       }
       filters += ` AND (${scopeClauses.join(" OR ")})`;
     }
@@ -890,16 +890,16 @@ const getHolidayLogs = async (req, res) => {
         c.city_name,
         l.zone_id,
         z.zone_name,
-        l.ward_id,
-        sec.sector_name AS ward_name,
         l.kothi_id,
-        wk.ward_name AS kothi_name,
+        sec.ward_name AS kothi_name,
+        l.kothi_id,
+        wk.kothi_name AS kothi_name,
         l.created_at
       FROM professional_holiday_logs l
       LEFT JOIN cities c ON c.city_id = l.city_id
       LEFT JOIN zones z ON z.zone_id = l.zone_id
-      LEFT JOIN sectors sec ON sec.sector_id = l.ward_id
-      LEFT JOIN wards wk ON wk.ward_id = l.kothi_id
+      LEFT JOIN wards sec ON sec.ward_id = l.kothi_id
+      LEFT JOIN kothis wk ON wk.kothi_id = l.kothi_id
       ${filters}
       ORDER BY l.created_at DESC
       LIMIT $${params.length + 1}

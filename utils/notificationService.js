@@ -33,7 +33,7 @@ const transporter = nodemailer.createTransport({
  * Send Welcome WhatsApp Message via MSG91
  * Selects template based on the city (Marathi for Pune, Hindi for others)
  */
-const sendWelcomeWhatsApp = async (user, plainPassword, cityName = "", zoneName = "Unassigned", wardName = "Unassigned", kothiName = "Unassigned") => {
+const sendWelcomeWhatsApp = async (user, plainPassword, cityName = "", zoneName = "Unassigned", kothiName = "Unassigned", kothiName = "Unassigned") => {
   const AUTH_KEY = process.env.MSG91_AUTH_KEY;
   const INTEGRATED_NUMBER = process.env.MSG91_WHATSAPP_INTEGRATED_NUMBER;
   const TEMPLATE_NAMESPACE = process.env.MSG91_WHATSAPP_TEMPLATE_NAMESPACE;
@@ -72,7 +72,7 @@ const sendWelcomeWhatsApp = async (user, plainPassword, cityName = "", zoneName 
               body_3: { type: "text", value: user.phone },
               body_4: { type: "text", value: plainPassword },
               body_5: { type: "text", value: zoneName },
-              body_6: { type: "text", value: wardName },
+              body_6: { type: "text", value: kothiName },
               body_7: { type: "text", value: kothiName },
             },
           },
@@ -102,7 +102,7 @@ const sendWelcomeWhatsApp = async (user, plainPassword, cityName = "", zoneName 
 /**
  * Send Welcome SMS via AWS SNS
  */
-const sendWelcomeSms = async (user, plainPassword, cityName = "", zoneName = "Unassigned", wardName = "Unassigned", kothiName = "Unassigned") => {
+const sendWelcomeSms = async (user, plainPassword, cityName = "", zoneName = "Unassigned", kothiName = "Unassigned", kothiName = "Unassigned") => {
   console.log(`[NotificationService] Attempting to send Welcome SMS to ${user.phone}`);
   if (!process.env.AWS_ACCESS_KEY || !process.env.AWS_SECRET_ACCESS_KEY) {
     console.warn("[NotificationService] AWS credentials missing for SMS. Skipping SMS.");
@@ -117,7 +117,7 @@ Email: ${user.email}
 Mobile: ${user.phone}
 Password: ${plainPassword}
 Zone: ${zoneName}
-Ward: ${wardName}
+Kothi: ${kothiName}
 Kothi: ${kothiName}
 
 Thank you. Please download MatrixTrack from your App Store or Play Store.`;

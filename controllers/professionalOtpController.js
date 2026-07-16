@@ -215,12 +215,12 @@ const verifyOtp = async (req, res) => {
     // ── PROFESSIONAL login ────────────────────────────────────────────────────
     if (record.userType === 'professional') {
       const { rows } = await pool.query(
-        `SELECT pe.id, pe.email, pe.face_locked, pe.ward_id, pe.zone_id, pe.city_id,
-                c.city_name, z.zone_name, w.ward_name
+        `SELECT pe.id, pe.email, pe.face_locked, pe.kothi_id, pe.zone_id, pe.city_id,
+                c.city_name, z.zone_name, w.kothi_name
          FROM professional_employees pe
          LEFT JOIN cities c ON c.city_id = pe.city_id
          LEFT JOIN zones z ON z.zone_id = pe.zone_id
-         LEFT JOIN wards w ON w.ward_id = pe.ward_id
+         LEFT JOIN kothis w ON w.kothi_id = pe.kothi_id
          WHERE pe.id = $1`,
         [record.professionalId]
       );
@@ -232,7 +232,7 @@ const verifyOtp = async (req, res) => {
       const professional = rows[0];
       const payload = {
         professional_id: professional.id,
-        ward_id: professional.ward_id,
+        kothi_id: professional.kothi_id,
         zone_id: professional.zone_id,
         city_id: professional.city_id,
         face_locked: professional.face_locked,

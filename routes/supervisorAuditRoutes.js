@@ -16,8 +16,8 @@ const formatDateIST = (date = new Date()) => {
  * @access Admin only (verified by middleware and role check in UI)
  */
 router.get("/", authenticate, async (req, res) => {
-  const { startDate, endDate, cityId, zoneId, sectorId, wardId } = req.query;
-  
+  const { startDate, endDate, cityId, zoneId, wardId, kothiId } = req.query;
+
   try {
     // Default to today if no dates provided
     const start = startDate && startDate !== "" && startDate !== "undefined" ? startDate : formatDateIST();
@@ -29,31 +29,37 @@ router.get("/", authenticate, async (req, res) => {
       SELECT 
         c.city_id,
         z.zone_id,
-        s.sector_id,
-        w.ward_id,
+        s.ward_id,
+        w.kothi_id,
         c.city_name,
         z.zone_name,
-        s.sector_name AS ward_name,
-        w.ward_name AS kothi_name,
+        s.ward_name AS kothi_name,
+        w.kothi_name AS kothi_name,
         u.name AS supervisor_name,
         u.phone AS supervisor_phone,
         COUNT(DISTINCT a_in.attendance_id) AS total_punch_in,
-        COUNT(DISTINCT a_out.attendance_id) AS total_punch_out
+        COUNT(DISTINCT a_out.attendance_id) AS total_punch_out,
+        COUNT(
+  DISTINCT CASE
+    WHEN a_in.mid_shift_punch_in_time IS NOT NULL
+    THEN a_in.attendance_id
+  END
+) AS total_mid_punch
       FROM users u
       JOIN supervisor_ward sw ON u.user_id = sw.supervisor_id
-      JOIN wards w ON sw.ward_id = w.ward_id
-      LEFT JOIN sectors s ON w.sector_id = s.sector_id
+      JOIN kothis w ON sw.kothi_id = w.kothi_id
+      LEFT JOIN wards s ON w.ward_id = s.ward_id
       LEFT JOIN zones z ON s.zone_id = z.zone_id
       LEFT JOIN cities c ON z.city_id = c.city_id
       LEFT JOIN attendance a_in ON a_in.punched_in_by = u.user_id 
-        AND a_in.ward_id = w.ward_id 
+        AND a_in.kothi_id = w.kothi_id 
         AND a_in.date::date >= $1 AND a_in.date::date <= $2
       LEFT JOIN attendance a_out ON a_out.punched_out_by = u.user_id 
-        AND a_out.ward_id = w.ward_id 
+        AND a_out.kothi_id = w.kothi_id 
         AND a_out.date::date >= $1 AND a_out.date::date <= $2
       WHERE u.role = 'supervisor'
-      GROUP BY c.city_id, z.zone_id, s.sector_id, w.ward_id, c.city_name, z.zone_name, s.sector_name, w.ward_name, u.name, u.phone
-      ORDER BY c.city_name, z.zone_name, s.sector_name, w.ward_name, u.name;
+      GROUP BY c.city_id, z.zone_id, s.ward_id, w.kothi_id, c.city_name, z.zone_name, s.ward_name, w.kothi_name, u.name, u.phone
+      ORDER BY c.city_name, z.zone_name, s.ward_name, w.kothi_name, u.name;
     `;
 
     const result = await pool.query(query, params);

@@ -69,7 +69,7 @@ const parseId = (id) => {
   return isNaN(parsed) ? null : parsed;
 };
 
-// 🟢 Fetch all employees with city, zone, ward, department, and designation
+// 🟢 Fetch all employees with city, zone, kothi, department, and designation
 router.get(
   "/",
   authenticate,
@@ -92,14 +92,14 @@ router.get(
         e.phone, 
         c.city_name AS city, 
         z.zone_name AS zone, 
-        w.ward_name AS ward, 
+        w.kothi_name AS kothi, 
         d.department_name AS department, 
         ds.designation_name AS designation,
         e.face_embedding,
         e.aadhar_no,
         e.aadhar_url
       FROM employee e
-      LEFT JOIN wards w ON e.ward_id = w.ward_id
+      LEFT JOIN kothis w ON e.kothi_id = w.kothi_id
       LEFT JOIN zones z ON w.zone_id = z.zone_id
       LEFT JOIN cities c ON z.city_id = c.city_id
       LEFT JOIN designation ds ON e.designation_id = ds.designation_id
@@ -116,20 +116,20 @@ router.get(
 
 // 🟢 Insert or update an employee (idempotent)
 router.post("/", async (req, res) => {
-  const { name, emp_code, phone, ward_id, designation_id } = req.body;
+  const { name, emp_code, phone, kothi_id, designation_id } = req.body;
 
   if (!emp_code) {
     return res.status(400).json({ error: "emp_code is required" });
   }
 
   const upsertEmployeeQuery = `
-    INSERT INTO employee (emp_code, name, phone, ward_id, designation_id, aadhar_no)
+    INSERT INTO employee (emp_code, name, phone, kothi_id, designation_id, aadhar_no)
     VALUES ($1, $2, $3, $4, $5, $6)
     ON CONFLICT (emp_code)
     DO UPDATE SET
       name = EXCLUDED.name,
       phone = EXCLUDED.phone,
-      ward_id = EXCLUDED.ward_id,
+      kothi_id = EXCLUDED.kothi_id,
       designation_id = EXCLUDED.designation_id,
       aadhar_no = EXCLUDED.aadhar_no
     RETURNING *;
@@ -140,7 +140,7 @@ router.post("/", async (req, res) => {
       emp_code,
       name,
       phone,
-      parseId(ward_id),
+      parseId(kothi_id),
       parseId(designation_id),
       req.body.aadhar_no || null
     ]);
@@ -161,13 +161,13 @@ router.post("/", async (req, res) => {
 router.put("/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, emp_code, phone, ward_id, designation_id } = req.body;
+    const { name, emp_code, phone, kothi_id, designation_id } = req.body;
     const result = await pool.query(
       `UPDATE employee 
-       SET name = $1, emp_code = $2, phone = $3, ward_id = $4, designation_id = $5, aadhar_no = $6 
+       SET name = $1, emp_code = $2, phone = $3, kothi_id = $4, designation_id = $5, aadhar_no = $6 
        WHERE emp_id = $7 
        RETURNING *`,
-      [name, emp_code, phone, parseId(ward_id), parseId(designation_id), req.body.aadhar_no || null, id]
+      [name, emp_code, phone, parseId(kothi_id), parseId(designation_id), req.body.aadhar_no || null, id]
     );
 
     if (result.rowCount === 0) {
@@ -183,14 +183,14 @@ router.put("/:id", async (req, res) => {
           e.phone, 
           c.city_name AS city, 
           z.zone_name AS zone, 
-          w.ward_name AS ward, 
+          w.kothi_name AS kothi, 
           d.department_name AS department, 
           ds.designation_name AS designation,
           e.face_embedding,
           e.aadhar_no,
           e.aadhar_url
        FROM employee e
-       LEFT JOIN wards w ON e.ward_id = w.ward_id
+       LEFT JOIN kothis w ON e.kothi_id = w.kothi_id
        LEFT JOIN zones z ON w.zone_id = z.zone_id
        LEFT JOIN cities c ON z.city_id = c.city_id
        LEFT JOIN designation ds ON e.designation_id = ds.designation_id

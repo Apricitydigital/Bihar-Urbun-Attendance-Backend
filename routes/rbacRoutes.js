@@ -277,13 +277,13 @@ const normalizeLocationAccess = async (
     kothiIds = [];
   } else if (kothiIds.length > 0) {
     const kothiResult = await client.query(
-      `SELECT ward_id
-       FROM wards
-       WHERE ward_id = ANY($1::int[])
+      `SELECT kothi_id
+       FROM kothis
+       WHERE kothi_id = ANY($1::int[])
          AND zone_id = ANY($2::int[])`,
       [kothiIds, zoneIds]
     );
-    kothiIds = normalizeIntArray(kothiResult.rows.map((row) => row.ward_id));
+    kothiIds = normalizeIntArray(kothiResult.rows.map((row) => row.kothi_id));
   }
 
   return { cityIds, zoneIds, kothiIds };
@@ -533,10 +533,10 @@ router.get("/users", authenticate, assertAdminOrPermission, async (req, res) => 
       LEFT JOIN LATERAL (
         SELECT json_agg(
           DISTINCT jsonb_build_object(
-            'ward_id', uka.ward_id,
-            'ward_name', w.ward_name,
-            'sector_id', w.sector_id,
-            'sector_name', s.sector_name,
+            'kothi_id', uka.kothi_id,
+            'kothi_name', w.kothi_name,
+            'ward_id', w.ward_id,
+            'ward_name', s.ward_name,
             'zone_id', s.zone_id,
             'zone_name', z.zone_name,
             'city_id', z.city_id,
@@ -544,8 +544,8 @@ router.get("/users", authenticate, assertAdminOrPermission, async (req, res) => 
           )
         ) AS kothis
         FROM user_kothi_access uka
-        JOIN wards w ON w.ward_id = uka.ward_id
-        LEFT JOIN sectors s ON s.sector_id = w.sector_id
+        JOIN kothis w ON w.kothi_id = uka.kothi_id
+        LEFT JOIN wards s ON s.ward_id = w.ward_id
         LEFT JOIN zones z ON z.zone_id = COALESCE(s.zone_id, w.zone_id)
         LEFT JOIN cities c ON c.city_id = z.city_id
         WHERE uka.user_id = u.user_id

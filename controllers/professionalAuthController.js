@@ -54,7 +54,7 @@ const login = async (req, res) => {
     // active/newest account when the same email has multiple records
     // (e.g. one rejected request + one approved request).
     const query = `
-      SELECT id, email, ${passwordColumn} AS password_hash, is_active, face_locked, ward_id, zone_id, city_id 
+      SELECT id, email, ${passwordColumn} AS password_hash, is_active, face_locked, kothi_id, zone_id, city_id 
       FROM professional_employees 
       WHERE email = $1
       ORDER BY is_active DESC, created_at DESC
@@ -81,7 +81,7 @@ const login = async (req, res) => {
     // Generate JWT for app professional session
     const payload = {
       professional_id: professional.id,
-      ward_id: professional.ward_id,
+      kothi_id: professional.kothi_id,
       zone_id: professional.zone_id,
       city_id: professional.city_id,
       face_locked: professional.face_locked

@@ -103,8 +103,8 @@ const getZones = async (req, res) => {
 };
 
 /**
- * @desc    Get wards (sectors in DB) for a given zone
- * @route   GET /api/public/wards?zone_id=5
+ * @desc    Get kothis (wards in DB) for a given zone
+ * @route   GET /api/public/kothis?zone_id=5
  * @access  Public
  */
 const getWards = async (req, res) => {
@@ -115,54 +115,54 @@ const getWards = async (req, res) => {
       return res.status(400).json({ success: false, message: 'zone_id query parameter is required' });
     }
 
-    const cacheKey = `dropdown:wards:${zone_id}`;
-    
-    // UI "Wards" map to DB "sectors"
-    const data = await fetchWithCache(cacheKey, async () => {
-      const result = await pool.query(`
-        SELECT sector_id AS ward_id, sector_name AS ward_name 
-        FROM sectors 
-        WHERE zone_id = $1 
-        ORDER BY sector_name ASC
-      `, [zone_id]);
-      return result.rows;
-    });
-
-    res.json({ success: true, data });
-  } catch (error) {
-    console.error('Error fetching wards:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
-  }
-};
-
-/**
- * @desc    Get kothis (wards in DB) for a given ward (sector in DB)
- * @route   GET /api/public/kothis?ward_id=10
- * @access  Public
- */
-const getKothis = async (req, res) => {
-  try {
-    const wardId = parseDropdownId(
-      req.query.ward_id,
-      req.query.wardId,
-      req.query.sector_id,
-      req.query.sectorId
-    );
-    
-    if (!wardId) {
-      return res.status(400).json({ success: false, message: 'ward_id query parameter is required' });
-    }
-
-    const cacheKey = `dropdown:kothis:${wardId}`;
+    const cacheKey = `dropdown:kothis:${zone_id}`;
     
     // UI "Kothis" map to DB "wards"
     const data = await fetchWithCache(cacheKey, async () => {
       const result = await pool.query(`
         SELECT ward_id AS kothi_id, ward_name AS kothi_name 
         FROM wards 
-        WHERE sector_id = $1 
+        WHERE zone_id = $1 
         ORDER BY ward_name ASC
-      `, [wardId]);
+      `, [zone_id]);
+      return result.rows;
+    });
+
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('Error fetching kothis:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
+
+/**
+ * @desc    Get kothis (kothis in DB) for a given kothi (ward in DB)
+ * @route   GET /api/public/kothis?kothi_id=10
+ * @access  Public
+ */
+const getKothis = async (req, res) => {
+  try {
+    const kothiId = parseDropdownId(
+      req.query.kothi_id,
+      req.query.kothiId,
+      req.query.ward_id,
+      req.query.wardId
+    );
+    
+    if (!kothiId) {
+      return res.status(400).json({ success: false, message: 'kothi_id query parameter is required' });
+    }
+
+    const cacheKey = `dropdown:kothis:${kothiId}`;
+    
+    // UI "Kothis" map to DB "kothis"
+    const data = await fetchWithCache(cacheKey, async () => {
+      const result = await pool.query(`
+        SELECT kothi_id AS kothi_id, kothi_name AS kothi_name 
+        FROM kothis 
+        WHERE ward_id = $1 
+        ORDER BY kothi_name ASC
+      `, [kothiId]);
       return result.rows;
     });
 

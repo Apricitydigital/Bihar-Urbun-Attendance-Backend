@@ -13,11 +13,11 @@
  *
  * The script:
  *   1) Validates the supplied IDs and that all zones exist (and are in the same city).
- *   2) Detects ward / sector name collisions that would violate unique constraints.
+ *   2) Detects kothi / ward name collisions that would violate unique constraints.
  *   3) Shows row counts per table that will be moved.
  *   4) Runs a single transaction to:
  *        - Drop duplicate user_zone_access rows that would violate PK
- *        - Re-point foreign keys (wards, sectors, geofencing, geofencing_requests, user_zone_access)
+ *        - Re-point foreign keys (kothis, wards, geofencing, geofencing_requests, user_zone_access)
  *        - Delete source zones
  *        - Optionally rename the target
  *
@@ -83,23 +83,23 @@ async function fetchZones(client, ids) {
 }
 
 async function checkNameCollisions(client, targetId, sourceIds) {
-  // Ward name collisions (unique_ward_per_zone)
+  // Kothi name collisions (unique_ward_per_zone)
   const wardSql = `
-    SELECT DISTINCT w.ward_name
-    FROM wards w
-    JOIN wards wt ON wt.zone_id = $1 AND wt.ward_name = w.ward_name
+    SELECT DISTINCT w.kothi_name
+    FROM kothis w
+    JOIN kothis wt ON wt.zone_id = $1 AND wt.kothi_name = w.kothi_name
     WHERE w.zone_id = ANY($2::int[])
   `;
-  const wardConflicts = (await client.query(wardSql, [targetId, sourceIds])).rows.map((r) => r.ward_name);
+  const wardConflicts = (await client.query(wardSql, [targetId, sourceIds])).rows.map((r) => r.kothi_name);
 
-  // Sector name collisions (unique_sector_per_zone)
+  // Ward name collisions (unique_sector_per_zone)
   const sectorSql = `
-    SELECT DISTINCT s.sector_name
-    FROM sectors s
-    JOIN sectors st ON st.zone_id = $1 AND st.sector_name = s.sector_name
+    SELECT DISTINCT s.ward_name
+    FROM wards s
+    JOIN wards st ON st.zone_id = $1 AND st.ward_name = s.ward_name
     WHERE s.zone_id = ANY($2::int[])
   `;
-  const sectorConflicts = (await client.query(sectorSql, [targetId, sourceIds])).rows.map((r) => r.sector_name);
+  const sectorConflicts = (await client.query(sectorSql, [targetId, sourceIds])).rows.map((r) => r.ward_name);
 
   return { wardConflicts, sectorConflicts };
 }
@@ -109,25 +109,25 @@ async function autoResolveConflicts(client, sourceIds, collisions) {
 
   if (wardConflicts.length) {
     await client.query(
-      `UPDATE wards
-       SET ward_name = ward_name || ' (merged from zone ' || zone_id || ')'
-       WHERE zone_id = ANY($1::int[]) AND ward_name = ANY($2::text[])`,
+      `UPDATE kothis
+       SET kothi_name = kothi_name || ' (merged from zone ' || zone_id || ')'
+       WHERE zone_id = ANY($1::int[]) AND kothi_name = ANY($2::text[])`,
       [sourceIds, wardConflicts]
     );
   }
 
   if (sectorConflicts.length) {
     await client.query(
-      `UPDATE sectors
-       SET sector_name = sector_name || ' (merged from zone ' || zone_id || ')'
-       WHERE zone_id = ANY($1::int[]) AND sector_name = ANY($2::text[])`,
+      `UPDATE wards
+       SET ward_name = ward_name || ' (merged from zone ' || zone_id || ')'
+       WHERE zone_id = ANY($1::int[]) AND ward_name = ANY($2::text[])`,
       [sourceIds, sectorConflicts]
     );
   }
 }
 
 async function tableCounts(client, ids) {
-  const tables = ["wards", "sectors", "geofencing", "geofencing_requests", "user_zone_access"];
+  const tables = ["kothis", "wards", "geofencing", "geofencing_requests", "user_zone_access"];
   const summary = {};
   for (const t of tables) {
     const { rows } = await client.query(`SELECT COUNT(*)::int AS count FROM ${t} WHERE zone_id = ANY($1::int[])`, [ids]);
@@ -159,8 +159,8 @@ async function mergeZones(opts) {
     const hasConflicts = collisions.wardConflicts.length || collisions.sectorConflicts.length;
     if (hasConflicts && !opts.autoResolve) {
       const messages = [];
-      if (collisions.wardConflicts.length) messages.push(`Wards: ${collisions.wardConflicts.join(", ")}`);
-      if (collisions.sectorConflicts.length) messages.push(`Sectors: ${collisions.sectorConflicts.join(", ")}`);
+      if (collisions.wardConflicts.length) messages.push(`Kothis: ${collisions.wardConflicts.join(", ")}`);
+      if (collisions.sectorConflicts.length) messages.push(`Wards: ${collisions.sectorConflicts.join(", ")}`);
       const err = new Error("Name conflicts detected. Resolve/rename before merging.");
       err.details = messages;
       throw err;
@@ -198,14 +198,14 @@ async function mergeZones(opts) {
       if (collisions.wardConflicts.length || collisions.sectorConflicts.length) {
         const err = new Error("Auto-resolve failed; conflicts remain.");
         err.details = [];
-        if (collisions.wardConflicts.length) err.details.push(`Wards: ${collisions.wardConflicts.join(", ")}`);
-        if (collisions.sectorConflicts.length) err.details.push(`Sectors: ${collisions.sectorConflicts.join(", ")}`);
+        if (collisions.wardConflicts.length) err.details.push(`Kothis: ${collisions.wardConflicts.join(", ")}`);
+        if (collisions.sectorConflicts.length) err.details.push(`Wards: ${collisions.sectorConflicts.join(", ")}`);
         throw err;
       }
     }
 
+    await client.query("UPDATE kothis SET zone_id = $2 WHERE zone_id = ANY($1::int[])", [opts.source, opts.target]);
     await client.query("UPDATE wards SET zone_id = $2 WHERE zone_id = ANY($1::int[])", [opts.source, opts.target]);
-    await client.query("UPDATE sectors SET zone_id = $2 WHERE zone_id = ANY($1::int[])", [opts.source, opts.target]);
     await client.query("UPDATE geofencing SET zone_id = $2 WHERE zone_id = ANY($1::int[])", [opts.source, opts.target]);
     await client.query("UPDATE geofencing_requests SET zone_id = $2 WHERE zone_id = ANY($1::int[])", [
       opts.source,

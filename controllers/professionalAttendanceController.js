@@ -409,7 +409,7 @@ const uploadPunchPhotoIfPossible = async ({ professionalId, dayKey, type, selfie
  * @access  Private (Professional)
  */
 const punchIn = async (req, res) => {
-  const { professional_id, ward_id, zone_id, city_id } = req.professional;
+  const { professional_id, kothi_id, zone_id, city_id } = req.professional;
   const { selfie_base64, latitude, longitude, liveness_frames, liveness_challenge } = req.body;
 
   if (!selfie_base64) {
@@ -540,7 +540,7 @@ const punchIn = async (req, res) => {
     // 5. Insert Punch In record
     const insertQuery = `
       INSERT INTO professional_attendance (
-        professional_id, date, punch_in, ward_id, zone_id, city_id,
+        professional_id, date, punch_in, kothi_id, zone_id, city_id,
         punch_in_latitude, punch_in_longitude, punch_in_photo_url
       )
       VALUES ($1, $2, NOW(), $3, $4, $5, $6, $7, $8)
@@ -550,7 +550,7 @@ const punchIn = async (req, res) => {
     const { rows } = await client.query(insertQuery, [
       professional_id,
       today,
-      ward_id,
+      kothi_id,
       zone_id,
       city_id,
       parseNumericCoordinate(latitude),
@@ -815,10 +815,10 @@ const getMonthlyAttendance = async (req, res) => {
          AND EXTRACT(MONTH FROM h.holiday_date) = $2
          AND h.city_id = $3
          AND (h.zone_id IS NULL OR h.zone_id = $4)
-         AND (h.ward_id IS NULL OR h.ward_id = $5)
+         AND (h.kothi_id IS NULL OR h.kothi_id = $5)
          AND (h.kothi_id IS NULL OR h.kothi_id = $6)
        ORDER BY h.holiday_date ASC`,
-      [yyyy, mm, profileScope.city_id || null, profileScope.zone_id || null, profileScope.ward_id || null, profileScope.kothi_id || null]
+      [yyyy, mm, profileScope.city_id || null, profileScope.zone_id || null, profileScope.kothi_id || null, profileScope.kothi_id || null]
     );
     const holidayByDate = {};
     holidayResult.rows.forEach((row) => {
@@ -1001,12 +1001,12 @@ const getProfile = async (req, res) => {
     const query = `
       SELECT 
         p.id, p.full_name, p.mobile, p.email, p.selfie_url, p.face_locked, p.created_at,
-        c.city_name, z.zone_name, s.sector_name as ward_name, w.ward_name as kothi_name
+        c.city_name, z.zone_name, s.ward_name as kothi_name, w.kothi_name as kothi_name
       FROM professional_employees p
       LEFT JOIN cities c ON p.city_id = c.city_id
       LEFT JOIN zones z ON p.zone_id = z.zone_id
-      LEFT JOIN sectors s ON p.ward_id = s.sector_id
-      LEFT JOIN wards w ON p.kothi_id = w.ward_id
+      LEFT JOIN wards s ON p.kothi_id = s.ward_id
+      LEFT JOIN kothis w ON p.kothi_id = w.kothi_id
       WHERE p.id = $1
     `;
 

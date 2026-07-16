@@ -11,20 +11,20 @@ router.get("/", authenticate, async (req, res) => {
       `SELECT
         sk.assigned_id,
         sk.supervisor_id as user_id,
-        sk.ward_id,
+        sk.kothi_id,
         u.emp_code,
         u.name,
-        w.ward_name as kothi_name,
-        s.sector_name as ward_name,
+        w.kothi_name as kothi_name,
+        s.ward_name as kothi_name,
         z.zone_name,
         c.city_name
        FROM supervisor_kothi sk
        JOIN users u ON sk.supervisor_id = u.user_id
-       JOIN wards w ON sk.ward_id = w.ward_id
-       JOIN sectors s ON s.sector_id = w.sector_id
+       JOIN kothis w ON sk.kothi_id = w.kothi_id
+       JOIN wards s ON s.ward_id = w.ward_id
        JOIN zones z ON z.zone_id = s.zone_id
        JOIN cities c ON c.city_id = z.city_id
-       ORDER BY u.name ASC, w.ward_name ASC`
+       ORDER BY u.name ASC, w.kothi_name ASC`
     );
     res.json(result.rows);
   } catch (error) {
@@ -35,23 +35,23 @@ router.get("/", authenticate, async (req, res) => {
 
 // Add new Assignment
 router.post("/", authenticate, async (req, res) => {
-  const { user_id, ward_id } = req.body;
-  if (!user_id || !ward_id) {
-    return res.status(400).json({ error: "Supervisor ID and Kothi (Ward) ID are required" });
+  const { user_id, kothi_id } = req.body;
+  if (!user_id || !kothi_id) {
+    return res.status(400).json({ error: "Supervisor ID and Kothi (Kothi) ID are required" });
   }
   try {
     const result = await pool.query(
-      `INSERT INTO supervisor_kothi (supervisor_id, ward_id)
+      `INSERT INTO supervisor_kothi (supervisor_id, kothi_id)
        VALUES ($1, $2)
-       ON CONFLICT (supervisor_id, ward_id) DO NOTHING
+       ON CONFLICT (supervisor_id, kothi_id) DO NOTHING
        RETURNING *`,
-      [user_id, ward_id]
+      [user_id, kothi_id]
     );
 
     if (result.rowCount === 0) {
       const existing = await pool.query(
-        "SELECT * FROM supervisor_kothi WHERE supervisor_id = $1 AND ward_id = $2",
-        [user_id, ward_id]
+        "SELECT * FROM supervisor_kothi WHERE supervisor_id = $1 AND kothi_id = $2",
+        [user_id, kothi_id]
       );
       return res.status(200).json(existing.rows[0]);
     }
@@ -66,17 +66,17 @@ router.post("/", authenticate, async (req, res) => {
 
 // Update Assignment
 router.put("/:id", authenticate, async (req, res) => {
-  const { user_id, ward_id } = req.body;
+  const { user_id, kothi_id } = req.body;
   const { id } = req.params;
 
-  if (!user_id || !ward_id) {
-    return res.status(400).json({ error: "Supervisor ID and Kothi (Ward) ID are required" });
+  if (!user_id || !kothi_id) {
+    return res.status(400).json({ error: "Supervisor ID and Kothi (Kothi) ID are required" });
   }
 
   try {
     const result = await pool.query(
-      "UPDATE supervisor_kothi SET supervisor_id = $1, ward_id = $2 WHERE assigned_id = $3 RETURNING *",
-      [user_id, ward_id, id]
+      "UPDATE supervisor_kothi SET supervisor_id = $1, kothi_id = $2 WHERE assigned_id = $3 RETURNING *",
+      [user_id, kothi_id, id]
     );
 
     if (result.rowCount === 0) {
