@@ -1,0 +1,20 @@
+.env 
+node_modules/ 
+matrixtrack-backend/ 
+uploads/
+supervisor_errors.log
+
+# logs
+*.log
+logs/audit/
+
+*.txt
+check_*.js
+run_query.js
+
+
+#test files
+test_*.js
+supervisor_errors.log
+scratch/dry_run_group_punch.js
+
