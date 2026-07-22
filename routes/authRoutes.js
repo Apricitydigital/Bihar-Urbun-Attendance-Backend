@@ -15,17 +15,17 @@ const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "45d";
 const APP_JWT_EXPIRES_IN = process.env.APP_JWT_EXPIRES_IN || "45d";
 const JWT_COOKIE_MAX_AGE_MS =
   Number(process.env.JWT_COOKIE_MAX_AGE_MS) || 45 * 24 * 60 * 60 * 1000;
-const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL || "mtadmin@apricitydigital.in";
+const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL || "admin@gmail.com";
 
 const isMobileClient = (req) => {
   const clientHeader = req.headers["x-client-platform"];
   const rawUserAgent = req.headers["user-agent"];
 
-  const clientHeaderStr = Array.isArray(clientHeader) 
-    ? clientHeader[0] 
+  const clientHeaderStr = Array.isArray(clientHeader)
+    ? clientHeader[0]
     : (clientHeader || "");
-  const userAgentStr = Array.isArray(rawUserAgent) 
-    ? rawUserAgent[0] 
+  const userAgentStr = Array.isArray(rawUserAgent)
+    ? rawUserAgent[0]
     : (rawUserAgent || "");
 
   return (
@@ -344,7 +344,7 @@ router.put("/update", async (req, res) => {
 // Helper function to check session limits
 async function enforceSessionLimits(user) {
   const { user_id: userId, role, custom_login_policy, custom_max_devices } = user;
-  if (role !== 'admin' && role !== 'supervisor') return null; 
+  if (role !== 'admin' && role !== 'supervisor') return null;
 
   try {
     let mode = custom_login_policy;
@@ -352,7 +352,7 @@ async function enforceSessionLimits(user) {
 
     if (!mode) {
       const settingsRes = await pool.query("SELECT * FROM security_settings WHERE id = 1");
-      if (settingsRes.rows.length === 0) return null; 
+      if (settingsRes.rows.length === 0) return null;
       const settings = settingsRes.rows[0];
 
       mode = role === 'admin' ? settings.admin_login_mode : settings.supervisor_login_mode;
@@ -422,7 +422,7 @@ router.post("/login", async (req, res) => {
     if (user.rows[0].role === 'admin') {
       const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit OTP
       const expiry = new Date(Date.now() + 5 * 60000); // 5 minutes
-      
+
       await pool.query(
         "UPDATE users SET login_otp = $1, login_otp_expiry = $2 WHERE user_id = $3",
         [otp, expiry, user.rows[0].user_id]
@@ -444,10 +444,10 @@ router.post("/login", async (req, res) => {
       const now = new Date();
       const kolkataTimeStr = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
       const kolkataDate = new Date(kolkataTimeStr);
-      
+
       const midnight = new Date(kolkataTimeStr);
       midnight.setHours(24, 0, 0, 0);
-      
+
       const diffMs = midnight.getTime() - kolkataDate.getTime();
       const diffSec = Math.floor(diffMs / 1000);
       return diffSec > 0 ? diffSec : 3600;
@@ -661,7 +661,7 @@ router.post("/verify-login-otp", async (req, res) => {
       httpOnly: true,
       maxAge: JWT_COOKIE_MAX_AGE_MS,
     });
-    
+
     const allowedCities = await computeAllowedCities(userData, access);
     const uiPermissions = buildUiPermissions(access);
     const employeeProfile = await fetchEmployeeProfile(userData.emp_code);
@@ -813,7 +813,7 @@ router.get("/security-settings", authenticateToken, async (req, res) => {
 // ✅ POST Security Settings (Admin only)
 router.post("/security-settings", authenticateToken, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: "Forbidden" });
-  
+
   const { admin_login_mode, admin_max_devices, supervisor_login_mode, supervisor_max_devices } = req.body;
   try {
     await pool.query(
@@ -833,14 +833,14 @@ router.post("/security-settings", authenticateToken, async (req, res) => {
 // ✅ GET Active Sessions
 router.get("/active-sessions", authenticateToken, async (req, res) => {
   try {
-    const { userId } = req.query; 
+    const { userId } = req.query;
     let query = "SELECT id, ip_address, device, logged_in_at, last_active_at FROM active_sessions WHERE user_id = $1 AND is_revoked = FALSE ORDER BY logged_in_at DESC";
     let params = [req.user.user_id];
-    
+
     if (req.user.role === 'admin' && userId) {
-        params = [userId];
+      params = [userId];
     }
-    
+
     const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (error) {
@@ -853,9 +853,9 @@ router.post("/revoke-session", authenticateToken, async (req, res) => {
   const { id } = req.body;
   try {
     if (req.user.role === 'admin') {
-       await pool.query("UPDATE active_sessions SET is_revoked = TRUE, revoked_by = $1, revoked_at = NOW() WHERE id = $2", [req.user.user_id, id]);
+      await pool.query("UPDATE active_sessions SET is_revoked = TRUE, revoked_by = $1, revoked_at = NOW() WHERE id = $2", [req.user.user_id, id]);
     } else {
-       await pool.query("UPDATE active_sessions SET is_revoked = TRUE, revoked_by = $1, revoked_at = NOW() WHERE id = $2 AND user_id = $3", [req.user.user_id, id, req.user.user_id]);
+      await pool.query("UPDATE active_sessions SET is_revoked = TRUE, revoked_by = $1, revoked_at = NOW() WHERE id = $2 AND user_id = $3", [req.user.user_id, id, req.user.user_id]);
     }
     res.json({ success: true });
   } catch (error) {

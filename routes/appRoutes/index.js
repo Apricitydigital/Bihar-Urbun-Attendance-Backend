@@ -12,6 +12,7 @@ const feedbackRoutes = require("./feedbackRoutes");
 
 // App Routes
 router.use("/supervisor/kothis", supervisorsWards);
+router.use("/supervisor/wards", supervisorsWards);
 router.use("/attendance/employee", attendanceRoutes);
 router.use("/attendance/employee/detail", employeeRoutes);
 router.use("/attendance/employee/faceRoutes", faceRoutes);
